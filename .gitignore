@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Uživatelská data (úkoly) a generované soubory
+/workspace/
+/assets/
+
+# OS
+Thumbs.db
+desktop.ini
