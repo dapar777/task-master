@@ -7,29 +7,29 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
-    QHBoxLayout,
     QInputDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
-    QPushButton,
     QSplitter,
     QStackedWidget,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
 from .cardview import CardView
-from .constants import APP_NAME, ORG_NAME
+from .constants import APP_NAME, DEFAULT_PRIORITY, ORG_NAME
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
 from .savedfilters import FilterStore, SavedFilter
 from .savedfiltersdialog import SavedFiltersDialog
 from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
-from .storage import Workspace
+from .storage import Workspace, parse_indented_text, serialize_node
+from .taskdialog import TaskDialog, ask_paste_position
 from .tasktree import TaskTreeWidget, breadcrumb, sort_nodes
 
 VIEW_MODES = ("tree", "list", "cards")
@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         if self._view_mode not in VIEW_MODES:
             self._view_mode = "tree"
         self._current_node = None
+        self._clip = None  # schránka úkolu: {"mode": "copy"|"cut", "data": ..., "src_id": ...}
         self.act: dict[str, QAction] = {}
 
         # debounce pro ukládání stavu UI do rootu workspace
@@ -63,7 +64,6 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_actions()
         self._build_menus()
-        self._build_toolbar()
         self._restore_geometry()
         self._open_initial_workspace()
 
@@ -75,16 +75,7 @@ class MainWindow(QMainWindow):
         self.filter_panel = FilterPanel()
         self.filter_panel.filtersChanged.connect(self._on_filter_changed)
         self.filter_panel.sortChanged.connect(self._on_sort_changed)
-
-        btn_row = QHBoxLayout()
-        self.new_btn = QPushButton("＋ Úkol")
-        self.sub_btn = QPushButton("＋ Podúkol")
-        self.del_btn = QPushButton("🗑 Smazat")
-        self.new_btn.clicked.connect(self._new_task)
-        self.sub_btn.clicked.connect(self._new_subtask)
-        self.del_btn.clicked.connect(self._delete_task)
-        for b in (self.new_btn, self.sub_btn, self.del_btn):
-            btn_row.addWidget(b)
+        self.filter_panel.savedFilterSelected.connect(self._apply_saved_filter_by_id)
 
         self.tree = TaskTreeWidget()
         self.tree.taskSelected.connect(self._on_task_selected)
@@ -92,13 +83,15 @@ class MainWindow(QMainWindow):
         self.tree.reparentRequested.connect(self._on_reparent)
         self.tree.reorderRequested.connect(self._on_reorder)
         self.tree.statusToggled.connect(self._on_status_toggled)
+        self.tree.renameRequested.connect(self._on_rename)
         self.tree.itemActivated.connect(lambda *_: self._focus_editor())
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_tree_menu)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(6, 6, 6, 6)
         left_layout.addWidget(self.filter_panel)
-        left_layout.addLayout(btn_row)
         left_layout.addWidget(self.tree, 1)
 
         # pravý panel
@@ -167,6 +160,11 @@ class MainWindow(QMainWindow):
         # vlaječka (kdekoli – působí na aktuální úkol)
         fl = self._make("task.flag", self._toggle_flag)
         fl.setAutoRepeat(False)
+        # schránka úkolů (kontext stromu)
+        self._make("task.copy", self._copy_task, target=self.tree)
+        self._make("task.cut", self._cut_task, target=self.tree)
+        self._make("task.paste", self._paste_task, target=self.tree)
+        self._make("task.paste_text", self._paste_from_text, target=self.tree)
         # Aplikace
         self._make("app.open_workspace", self._choose_workspace)
         self._make("app.save", self._save)
@@ -218,6 +216,9 @@ class MainWindow(QMainWindow):
         for cid in ("task.new", "task.new_sub", "task.rename", "task.delete"):
             m_task.addAction(self.act[cid])
         m_task.addSeparator()
+        for cid in ("task.copy", "task.cut", "task.paste", "task.paste_text"):
+            m_task.addAction(self.act[cid])
+        m_task.addSeparator()
         m_task.addAction(self.act["task.move_up"])
         m_task.addAction(self.act["task.move_down"])
         m_task.addAction(self.act["task.priority_up"])
@@ -250,24 +251,6 @@ class MainWindow(QMainWindow):
         m_settings = mb.addMenu("&Nastavení")
         m_settings.addAction(self.act["app.shortcuts"])
 
-    def _build_toolbar(self) -> None:
-        tb = QToolBar("Hlavní")
-        tb.setMovable(False)
-        self.addToolBar(tb)
-        for cid in ("app.open_workspace", "task.new", "task.new_sub", "task.rename", "task.delete"):
-            tb.addAction(self.act[cid])
-        tb.addSeparator()
-        for cid in ("view.tree", "view.list", "view.cards"):
-            tb.addAction(self.act[cid])
-        tb.addSeparator()
-        tb.addAction(self.act["app.refresh"])
-        tb.addAction(self.act["app.save"])
-        tb.addSeparator()
-        tb.addAction(self.act["filter.save"])
-        tb.addAction(self.act["filter.manage"])
-        tb.addSeparator()
-        tb.addAction(self.act["app.shortcuts"])
-
     # ------------------------------------------------------------------
     # Fokus / navigace klávesnicí
     # ------------------------------------------------------------------
@@ -285,9 +268,8 @@ class MainWindow(QMainWindow):
             self.detail.editor.edit.setFocus()
 
     def _focus_title(self) -> None:
-        if self.detail.isEnabled():
-            self.detail.title_edit.setFocus()
-            self.detail.title_edit.selectAll()
+        # název se needituje v metadatech – Ctrl+3 spustí inline přejmenování
+        self._rename_dir()
 
     def _focus_links(self) -> None:
         if self.detail.isEnabled():
@@ -443,26 +425,40 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Akce s úkoly
     # ------------------------------------------------------------------
+    def _inherit_defaults(self, source) -> dict:
+        d = {}
+        if source is not None:
+            d["priority"] = source.meta.get("_priority", DEFAULT_PRIORITY)
+            d["category"] = source.meta.get("_category", "") or ""
+        return d
+
+    def _apply_dialog_meta(self, node, vals: dict) -> None:
+        node.meta["_status"] = vals["status"]
+        node.meta["_priority"] = vals["priority"]
+        node.meta["_category"] = vals["category"]
+        node.meta["_tags"] = vals["tags"]
+        node.meta["_flag"] = vals["flag"]
+        node.save_meta()
+
     def _new_task(self) -> None:
         if not self.workspace:
             return
-        title, ok = QInputDialog.getText(self, "Nový úkol", "Název úkolu:")
-        if not ok or not title.strip():
+        cur = self._current_node
+        parent = cur.parent if cur is not None else None
+        vals = TaskDialog.get(self, "Nový úkol", self._inherit_defaults(parent or cur))
+        if not vals:
             return
         self.detail.commit()
         self.detail.discard()
-        # nový úkol vznikne na STEJNÉ úrovni jako vybraný (jako jeho sourozenec)
-        cur = self._current_node
-        parent = cur.parent if cur is not None else None
         if parent is not None:
-            node = parent.create_child(title.strip())
+            node = parent.create_child(vals["title"])
         else:
-            node = self.workspace.create_root(title.strip())
+            node = self.workspace.create_root(vals["title"])
+        self._apply_dialog_meta(node, vals)
         new_id = node.meta.get("_id")
         cur_id = cur.meta.get("_id") if cur is not None else None
         self.workspace.load()
         nn = self.workspace.node_by_id(new_id)
-        # zařaď ho hned za aktuální úkol
         if nn is not None and cur_id:
             cu = self.workspace.node_by_id(cur_id)
             if cu is not None and cu.parent is nn.parent:
@@ -476,16 +472,112 @@ class MainWindow(QMainWindow):
         if parent is None:
             QMessageBox.information(self, "Podúkol", "Nejprve vyber nadřazený úkol.")
             return
-        title, ok = QInputDialog.getText(self, "Nový podúkol", f"Podúkol pod „{parent.title}“:")
-        if not ok or not title.strip():
+        vals = TaskDialog.get(self, f"Nový podúkol pod „{parent.title}“", self._inherit_defaults(parent))
+        if not vals:
             return
         self.detail.commit()
         self.detail.discard()
-        child = parent.create_child(title.strip())
-        new_path = str(child.path)
+        child = parent.create_child(vals["title"])
+        self._apply_dialog_meta(child, vals)
+        new_id = child.meta.get("_id")
+        self.workspace.load()
+        nn = self.workspace.node_by_id(new_id)
+        self._populate()
+        if nn is not None:
+            self._select_path_in_view(str(nn.path))
+
+    # ------------------------------------------------------------------
+    # Schránka úkolů (copy / cut / paste / vložení z textu)
+    # ------------------------------------------------------------------
+    def _copy_task(self) -> None:
+        node = self._current_node
+        if node is None:
+            return
+        self._clip = {"mode": "copy", "data": serialize_node(node), "src_id": node.task_id}
+        self.status.showMessage(f"Zkopírováno: {node.title}", 1500)
+
+    def _cut_task(self) -> None:
+        node = self._current_node
+        if node is None:
+            return
+        self._clip = {"mode": "cut", "data": serialize_node(node), "src_id": node.task_id}
+        self.status.showMessage(f"Vyjmuto: {node.title}", 1500)
+
+    def _paste_task(self) -> None:
+        if not self._clip or not self.workspace:
+            return
+        target = self._current_node  # vloží jako podúkol cíle (None = kořen)
+        if self._clip["mode"] == "cut":
+            src = self.workspace.node_by_id(self._clip["src_id"])
+            if src is not None and target is not None and (src is target or src.is_ancestor_of(target)):
+                QMessageBox.information(self, "Vložit", "Úkol nelze vložit do sebe sama.")
+                return
+        self.detail.commit()
+        self.detail.discard()
+        new = self.workspace.create_subtree(target, self._clip["data"])
+        new_id = new.meta.get("_id")
+        if self._clip["mode"] == "cut":
+            src = self.workspace.node_by_id(self._clip["src_id"])
+            if src is not None:
+                src.delete()
+            self._clip = None  # vyjmutí je jednorázové
         self.workspace.load()
         self._populate()
-        self._select_path_in_view(new_path)
+        nn = self.workspace.node_by_id(new_id)
+        if nn is not None:
+            self._select_path_in_view(str(nn.path))
+
+    def _paste_from_text(self) -> None:
+        if not self.workspace:
+            return
+        text = QApplication.clipboard().text()
+        roots = parse_indented_text(text)
+        if not roots:
+            QMessageBox.information(self, "Vložit z textu",
+                                    "Schránka neobsahuje text se strukturou úkolů.")
+            return
+        cur = self._current_node
+        pos = ask_paste_position(self, cur is not None)
+        if pos is None:
+            return
+        self.detail.commit()
+        self.detail.discard()
+        cur_id = cur.task_id if cur is not None else None
+        if pos == "under":
+            parent_node = cur
+        elif pos == "after":
+            parent_node = cur.parent if cur is not None else None
+        else:  # end
+            parent_node = None
+        created_ids = []
+        for r in roots:
+            n = self.workspace.create_subtree(parent_node, r)
+            created_ids.append(n.meta.get("_id"))
+        self.workspace.load()
+        if pos == "after" and cur_id:
+            prev = self.workspace.node_by_id(cur_id)
+            for cid in created_ids:
+                nd = self.workspace.node_by_id(cid)
+                if nd is not None and prev is not None and nd.parent is prev.parent:
+                    self._place_node(nd, prev, before=False)
+                    prev = nd
+        self._populate()
+        if created_ids:
+            first = self.workspace.node_by_id(created_ids[0])
+            if first is not None:
+                self._select_path_in_view(str(first.path))
+        self.status.showMessage(f"Vloženo úkolů: {len(created_ids)}", 2000)
+
+    def _show_tree_menu(self, pos) -> None:
+        menu = QMenu(self)
+        for cid in ("task.new", "task.new_sub", None,
+                    "task.copy", "task.cut", "task.paste", "task.paste_text", None,
+                    "task.rename", "task.delete", None, "task.flag"):
+            if cid is None:
+                menu.addSeparator()
+            else:
+                menu.addAction(self.act[cid])
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
 
     def _delete_task(self) -> None:
         node = self._current_node
@@ -509,15 +601,16 @@ class MainWindow(QMainWindow):
         node = self._current_node
         if node is None:
             return
-        title, ok = QInputDialog.getText(
-            self, "Přejmenovat složku", "Nový název:", text=node.title
-        )
-        if not ok or not title.strip():
-            return
+        if self._view_mode == "cards":
+            self._set_view_mode("tree")
+            self._select_in_view(node)
+        self.tree.edit_title(node)
+
+    def _on_rename(self, node, new_title: str) -> None:
         self.detail.commit()
         self.detail.discard()
         try:
-            node.rename_dir(title.strip())
+            node.rename_dir(new_title)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přejmenování selhalo:\n{e}")
         new_path = str(node.path)
@@ -637,10 +730,18 @@ class MainWindow(QMainWindow):
             self.m_filters.addSeparator()
         self.m_filters.addAction(self.act["filter.save"])
         self.m_filters.addAction(self.act["filter.manage"])
+        # combo uložených filtrů v panelu
+        self.filter_panel.populate_saved([(f.id, f.name) for f in self.filter_store.filters])
+
+    def _apply_saved_filter_by_id(self, fid: str) -> None:
+        sf = self.filter_store.get(fid)
+        if sf is not None:
+            self._apply_saved_filter(sf)
 
     def _apply_saved_filter(self, sf: SavedFilter) -> None:
         self.detail.commit()
         self.filter_panel.apply_preset(sf.to_preset())
+        self.filter_panel.set_saved(sf.id)
         view = sf.view if sf.view in VIEW_MODES else "tree"
         self._view_mode = view
         self.settings.setValue("view_mode", view)

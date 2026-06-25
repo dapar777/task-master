@@ -23,6 +23,7 @@ class SavedFilter:
     priority_max: int = 10
     categories: list = field(default_factory=list)
     tags: list = field(default_factory=list)
+    flag: object = None  # None = bez filtru, True/False
     # zobrazení a řazení
     view: str = "tree"          # "tree" | "list" | "cards"
     sort_key: str = "title"
@@ -40,6 +41,7 @@ class SavedFilter:
             priority_max=int(preset.get("priority_max", 10) or 10),
             categories=list(preset.get("categories", []) or []),
             tags=list(preset.get("tags", []) or []),
+            flag=preset.get("flag", None),
             view=view,
             sort_key=preset.get("sort_key", "title"),
             sort_desc=bool(preset.get("sort_desc", False)),
@@ -55,6 +57,7 @@ class SavedFilter:
             "priority_max": self.priority_max,
             "categories": list(self.categories),
             "tags": list(self.tags),
+            "flag": self.flag,
             "sort_key": self.sort_key,
             "sort_desc": self.sort_desc,
         }

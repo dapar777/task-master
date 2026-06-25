@@ -310,6 +310,42 @@ def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None) ->
     return node
 
 
+def serialize_node(node: "TaskNode") -> dict:
+    """Zserializuje úkol (vč. podúkolů) pro kopírování – bez id a časů."""
+    skip = {"_id", "_created", "_modified", "_order"}
+    return {
+        "title": node.title,
+        "meta": {k: v for k, v in node.meta.items() if k not in skip},
+        "body": node.read_body(),
+        "children": [serialize_node(c) for c in node.children],
+    }
+
+
+def parse_indented_text(text: str) -> list[dict]:
+    """Z odsazeného textu vyrobí stromovou strukturu úkolů.
+
+    Příklad::
+        Task1
+          Subtask1
+        Task2
+    """
+    out_roots: list[dict] = []
+    stack: list[tuple[int, dict]] = []  # (indent, node)
+    for raw in (text or "").splitlines():
+        if not raw.strip():
+            continue
+        indent = len(raw) - len(raw.lstrip(" \t"))
+        node = {"title": raw.strip(), "children": []}
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        if stack:
+            stack[-1][1]["children"].append(node)
+        else:
+            out_roots.append(node)
+        stack.append((indent, node))
+    return out_roots
+
+
 class Workspace:
     """Kořenový pracovní prostor obsahující úkoly nejvyšší úrovně."""
 
@@ -361,6 +397,24 @@ class Workspace:
     def create_root(self, title: str) -> TaskNode:
         base = unique_dirname(self.root, slugify(title))
         return _create_task_dir(self.root / base, title, parent=None, append_to=self.roots)
+
+    def create_subtree(self, parent: "TaskNode | None", data: dict) -> TaskNode:
+        """Vytvoří úkol (a rekurzivně podúkoly) z dat (copy/paste, text)."""
+        if parent is None:
+            node = self.create_root(data.get("title", "Úkol"))
+        else:
+            node = parent.create_child(data.get("title", "Úkol"))
+        meta = data.get("meta")
+        if meta:
+            for k, v in meta.items():
+                node.meta[k] = v
+            node.save_meta()
+        body = data.get("body")
+        if body is not None:
+            node.write_body(body)
+        for ch in data.get("children", []) or []:
+            self.create_subtree(node, ch)
+        return node
 
     def move_to_root(self, node: TaskNode) -> None:
         if node.parent and node in node.parent.children:

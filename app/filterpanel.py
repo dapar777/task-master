@@ -1,7 +1,8 @@
-"""Panel filtrů: hledání podle názvu, stavu, kategorie, priority a tagu.
+"""Panel filtrů.
 
-Výčtové vlastnosti (stav, kategorie, tag) lze zaškrtnout pro VÍCE hodnot.
-Priorita se filtruje rozmezím od–do.
+Defaultně zobrazuje jen combo pro výběr uloženého filtru; kritéria
+(stav, priorita, kategorie, tag, řazení) se zobrazí po rozkliknutí.
+Výčtové vlastnosti lze zaškrtnout pro víc hodnot, priorita je rozmezí.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -50,7 +52,7 @@ class CheckableComboBox(QComboBox):
                 item.setCheckState(Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked)
                 self._update_text()
                 self.changed.emit()
-            return True  # nezavírat popup
+            return True
         return super().eventFilter(obj, event)
 
     def add_value(self, label: str, data) -> None:
@@ -90,11 +92,27 @@ class CheckableComboBox(QComboBox):
 
 class FilterPanel(QWidget):
     filtersChanged = Signal()
-    sortChanged = Signal(str, bool, str, bool)  # prev_key, prev_desc, new_key, new_desc
+    sortChanged = Signal(str, bool, str, bool)
+    savedFilterSelected = Signal(str)  # id uloženého filtru ("" = žádný)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._applying = False
 
+        # --- výběr uloženého filtru + rozbalení kritérií ---
+        self.saved_combo = QComboBox()
+        self.saved_combo.addItem("— uložený filtr —", "")
+        self.expand_btn = QToolButton()
+        self.expand_btn.setCheckable(True)
+        self.expand_btn.setAutoRaise(True)
+        self.expand_btn.setText("Kritéria ▸")
+        self.expand_btn.setToolTip("Zobrazit/skrýt kritéria filtru")
+        self.expand_btn.toggled.connect(self._toggle_criteria)
+        header = QHBoxLayout()
+        header.addWidget(self.saved_combo, 1)
+        header.addWidget(self.expand_btn)
+
+        # --- kritéria ---
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("hledat v názvu…")
         self.name_edit.setClearButtonEnabled(True)
@@ -102,11 +120,9 @@ class FilterPanel(QWidget):
         self.status_box = CheckableComboBox()
         for key, label in STATUSES.items():
             self.status_box.add_value(label, key)
-
         self.category_box = CheckableComboBox()
         self.tag_box = CheckableComboBox()
 
-        # priorita jako rozmezí od–do
         self.prio_min = QSpinBox()
         self.prio_min.setRange(1, 10)
         self.prio_min.setValue(1)
@@ -123,7 +139,11 @@ class FilterPanel(QWidget):
         prio_widget = QWidget()
         prio_widget.setLayout(prio_row)
 
-        # řazení
+        self.flag_combo = QComboBox()
+        self.flag_combo.addItem("— vlaječka —", None)
+        self.flag_combo.addItem("🚩 jen označené", True)
+        self.flag_combo.addItem("bez vlaječky", False)
+
         self.sort_combo = QComboBox()
         for key, label in SORT_OPTIONS.items():
             self.sort_combo.addItem(label, key)
@@ -137,37 +157,58 @@ class FilterPanel(QWidget):
         form.addRow("Priorita:", prio_widget)
         form.addRow("Kategorie:", self.category_box)
         form.addRow("Tag:", self.tag_box)
+        form.addRow("Vlaječka:", self.flag_combo)
         form.addRow("Řadit dle:", self.sort_combo)
         form.addRow("Směr:", self.sort_dir_combo)
 
         self.reset_btn = QPushButton("Zrušit filtry")
         self.reset_btn.clicked.connect(self.reset)
 
+        self.criteria = QWidget()
+        crit_layout = QVBoxLayout(self.criteria)
+        crit_layout.setContentsMargins(0, 4, 0, 0)
+        crit_layout.addLayout(form)
+        crit_layout.addWidget(self.reset_btn)
+        self.criteria.setVisible(False)
+
         box = QGroupBox("Filtry")
         box_layout = QVBoxLayout(box)
-        box_layout.addLayout(form)
-        box_layout.addWidget(self.reset_btn)
+        box_layout.addLayout(header)
+        box_layout.addWidget(self.criteria)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(box)
 
-        # signály filtrů
-        self.name_edit.textChanged.connect(self.filtersChanged)
-        self.status_box.changed.connect(self.filtersChanged)
-        self.category_box.changed.connect(self.filtersChanged)
-        self.tag_box.changed.connect(self.filtersChanged)
+        # signály kritérií
+        self.name_edit.textChanged.connect(self._criteria_changed)
+        self.status_box.changed.connect(self._criteria_changed)
+        self.category_box.changed.connect(self._criteria_changed)
+        self.tag_box.changed.connect(self._criteria_changed)
+        self.flag_combo.currentIndexChanged.connect(self._criteria_changed)
         self.prio_min.valueChanged.connect(self._on_prio_changed)
         self.prio_max.valueChanged.connect(self._on_prio_changed)
 
-        # signály řazení (zvlášť kvůli reseedu vlastního pořadí)
+        # řazení (zvlášť kvůli reseedu vlastního pořadí)
         self._cur_sort = self.current_sort()
         self.sort_combo.currentIndexChanged.connect(self._on_sort_ui_changed)
         self.sort_dir_combo.currentIndexChanged.connect(self._on_sort_ui_changed)
 
+        # výběr uloženého filtru
+        self.saved_combo.currentIndexChanged.connect(self._on_saved_selected)
+
     # ------------------------------------------------------------------
+    def _toggle_criteria(self, on: bool) -> None:
+        self.criteria.setVisible(on)
+        self.expand_btn.setText("Kritéria ▾" if on else "Kritéria ▸")
+
+    def _criteria_changed(self) -> None:
+        if self._applying:
+            return
+        self._set_saved_silent("")  # ruční změna -> „vlastní"
+        self.filtersChanged.emit()
+
     def _on_prio_changed(self) -> None:
-        # udrž min <= max
         if self.prio_min.value() > self.prio_max.value():
             sender = self.sender()
             if sender is self.prio_min:
@@ -178,7 +219,7 @@ class FilterPanel(QWidget):
                 self.prio_min.blockSignals(True)
                 self.prio_min.setValue(self.prio_max.value())
                 self.prio_min.blockSignals(False)
-        self.filtersChanged.emit()
+        self._criteria_changed()
 
     def _on_sort_ui_changed(self) -> None:
         new = self.current_sort()
@@ -186,7 +227,41 @@ class FilterPanel(QWidget):
         if new == prev:
             return
         self._cur_sort = new
+        if not self._applying:
+            self._set_saved_silent("")
         self.sortChanged.emit(prev[0], prev[1], new[0], new[1])
+
+    # ----- uložené filtry v combu -----
+    def populate_saved(self, items) -> None:
+        """items: seznam (id, name). Zachová aktuální výběr podle id."""
+        current = self.saved_combo.currentData()
+        self.saved_combo.blockSignals(True)
+        self.saved_combo.clear()
+        self.saved_combo.addItem("— uložený filtr —", "")
+        for fid, name in items:
+            self.saved_combo.addItem(name, fid)
+        idx = self.saved_combo.findData(current)
+        self.saved_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.saved_combo.blockSignals(False)
+
+    def set_saved(self, filter_id: str) -> None:
+        self._set_saved_silent(filter_id or "")
+
+    def _set_saved_silent(self, filter_id: str) -> None:
+        idx = self.saved_combo.findData(filter_id)
+        if idx < 0:
+            idx = 0
+        if self.saved_combo.currentIndex() != idx:
+            self.saved_combo.blockSignals(True)
+            self.saved_combo.setCurrentIndex(idx)
+            self.saved_combo.blockSignals(False)
+
+    def _on_saved_selected(self) -> None:
+        if self._applying:
+            return
+        fid = self.saved_combo.currentData() or ""
+        if fid:
+            self.savedFilterSelected.emit(fid)
 
     # ------------------------------------------------------------------
     def populate_dynamic(self, categories: list[str], tags: list[str]) -> None:
@@ -196,7 +271,6 @@ class FilterPanel(QWidget):
             box.clear_values()
             for v in values:
                 box.add_value(v, v)
-            # zachovej i hodnoty, které zrovna v datech nejsou (z presetu)
             for v in checked:
                 if v not in values:
                     box.add_value(v, v)
@@ -211,7 +285,9 @@ class FilterPanel(QWidget):
         self.tag_box.set_checked_data([])
         self.prio_min.setValue(1)
         self.prio_max.setValue(10)
+        self.flag_combo.setCurrentIndex(0)
         self.blockSignals(False)
+        self._set_saved_silent("")
         self.filtersChanged.emit()
 
     # ------------------------------------------------------------------
@@ -223,6 +299,7 @@ class FilterPanel(QWidget):
             "priority_max": self.prio_max.value(),
             "categories": self.category_box.checked_data(),
             "tags": self.tag_box.checked_data(),
+            "flag": self.flag_combo.currentData(),
         }
 
     def matches(self, node) -> bool:
@@ -244,6 +321,8 @@ class FilterPanel(QWidget):
             node_tags = set(meta.get("_tags", []) or [])
             if not node_tags.intersection(f["tags"]):
                 return False
+        if f["flag"] is not None and bool(meta.get("_flag", False)) != f["flag"]:
+            return False
         return True
 
     # ----- řazení -----
@@ -258,7 +337,7 @@ class FilterPanel(QWidget):
         self.blockSignals(False)
         self._cur_sort = self.current_sort()
 
-    # ----- uložené filtry (presety) -----
+    # ----- presety -----
     def export_preset(self) -> dict:
         f = self.current_filters()
         f["name"] = self.name_edit.text().strip()
@@ -268,12 +347,14 @@ class FilterPanel(QWidget):
         return f
 
     def apply_preset(self, data: dict) -> None:
+        self._applying = True
         self.blockSignals(True)
         self.name_edit.setText(data.get("name", "") or "")
         self.status_box.set_checked_data(data.get("statuses", []) or [])
         self.prio_min.setValue(int(data.get("priority_min", 1) or 1))
         self.prio_max.setValue(int(data.get("priority_max", 10) or 10))
-        # u kategorie/tagu doplň chybějící hodnoty, ať je lze zaškrtnout
+        flag_val = data.get("flag", None)
+        self.flag_combo.setCurrentIndex(self.flag_combo.findData(flag_val) if flag_val is not None else 0)
         for box, key in ((self.category_box, "categories"), (self.tag_box, "tags")):
             vals = data.get(key, []) or []
             existing = {box._model.item(i).data(DATA_ROLE) for i in range(box._model.rowCount())}
@@ -283,3 +364,4 @@ class FilterPanel(QWidget):
             box.set_checked_data(vals)
         self.set_sort(data.get("sort_key", "title"), bool(data.get("sort_desc", False)))
         self.blockSignals(False)
+        self._applying = False

@@ -40,6 +40,10 @@ def summary(sf: SavedFilter) -> str:
         parts.append("kategorie=" + ", ".join(sf.categories))
     if sf.tags:
         parts.append("tagy=" + ", ".join(sf.tags))
+    if sf.flag is True:
+        parts.append("🚩 označené")
+    elif sf.flag is False:
+        parts.append("bez vlaječky")
     return ", ".join(parts) if parts else "(bez podmínek – zobrazí vše)"
 
 
@@ -224,6 +228,7 @@ class SavedFiltersDialog(QDialog):
         self._current.priority_max = int(p.get("priority_max", 10) or 10)
         self._current.categories = list(p.get("categories", []) or [])
         self._current.tags = list(p.get("tags", []) or [])
+        self._current.flag = p.get("flag", None)
         self.summary_label.setText(summary(self._current))
 
     def _save(self) -> None:

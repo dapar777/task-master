@@ -24,7 +24,7 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "focus.filter": ("Přejít na hledání", "Navigace", "Ctrl+F", "window"),
     "focus.tree": ("Přejít na strom úkolů", "Navigace", "Ctrl+1", "window"),
     "focus.editor": ("Přejít do editoru", "Navigace", "Ctrl+2", "window"),
-    "focus.title": ("Přejít na název úkolu", "Navigace", "Ctrl+3", "window"),
+    "focus.title": ("Přejmenovat úkol (inline)", "Navigace", "Ctrl+3", "window"),
     "focus.links": ("Přejít na odkazy", "Navigace", "Ctrl+4", "window"),
     # Úkoly
     "task.new": ("Nový úkol", "Úkoly", "Ctrl+N", "window"),
@@ -36,6 +36,10 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "task.priority_up": ("Zvýšit prioritu", "Úkoly", "Ctrl+Up", "reorder"),
     "task.priority_down": ("Snížit prioritu", "Úkoly", "Ctrl+Down", "reorder"),
     "task.flag": ("Přepnout vlaječku", "Úkoly", "Ctrl+T", "window"),
+    "task.copy": ("Kopírovat úkol", "Úkoly", "Ctrl+C", "tree"),
+    "task.cut": ("Vyjmout úkol", "Úkoly", "Ctrl+X", "tree"),
+    "task.paste": ("Vložit úkol", "Úkoly", "Ctrl+V", "tree"),
+    "task.paste_text": ("Vložit úkoly z textu", "Úkoly", "Ctrl+Shift+V", "tree"),
     # Aplikace / zobrazení
     "app.open_workspace": ("Otevřít prostor…", "Aplikace", "Ctrl+O", "window"),
     "app.save": ("Uložit", "Aplikace", "Ctrl+S", "window"),

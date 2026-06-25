@@ -59,6 +59,7 @@ class TaskTreeWidget(QTreeWidget):
     reparentRequested = Signal(object, object)  # (node, new_parent | None)
     reorderRequested = Signal(object, object, bool)  # (node, ref_node, before) – pořadí
     statusToggled = Signal(object, str)  # (node, new_status) z checkboxu
+    renameRequested = Signal(object, str)  # (node, new_title) z inline editace
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,8 +78,42 @@ class TaskTreeWidget(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDropIndicatorShown(True)
 
+        # editace názvu jen programově (F2 / akce), ne dvojklikem
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._editing_item = None
+        self._editing_orig = ""
+
         self.itemSelectionChanged.connect(self._on_selection_changed)
         self.itemChanged.connect(self._on_item_changed)
+        self.itemDelegate().closeEditor.connect(self._finish_edit)
+
+    # ------------------------------------------------------------------
+    # Inline přejmenování
+    # ------------------------------------------------------------------
+    def edit_title(self, node: TaskNode) -> bool:
+        it = self._find_item_by_path(str(node.path))
+        if it is None:
+            return False
+        self.blockSignals(True)
+        it.setText(0, node.title)  # bez odznaků
+        it.setFlags(it.flags() | Qt.ItemFlag.ItemIsEditable)
+        self.blockSignals(False)
+        self._editing_item = it
+        self._editing_orig = node.title
+        self.setCurrentItem(it)
+        self.editItem(it, 0)
+        return True
+
+    def _finish_edit(self, editor, hint) -> None:
+        it = self._editing_item
+        if it is None:
+            return
+        self._editing_item = None
+        node = it.data(0, NODE_ROLE)
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        new_title = it.text(0).strip()
+        if node is not None and new_title and new_title != self._editing_orig:
+            self.renameRequested.emit(node, new_title)
 
     # ------------------------------------------------------------------
     # Naplnění

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QToolButton,
     QVBoxLayout,
@@ -77,9 +78,7 @@ class TaskDetailPanel(QWidget):
         # funkce id -> TaskNode pro překlad odkazů (nastaví hlavní okno)
         self.resolver = None
 
-        # --- metadata (kompaktní mřížka, 2 sloupce) ---
-        self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("název úkolu")
+        # --- metadata (kompaktní mřížka, 2 sloupce; název se needituje zde) ---
         # vlaječka jako klikací ikona (vyplněná = zapnuto)
         self.flag_btn = QToolButton()
         self.flag_btn.setCheckable(True)
@@ -106,6 +105,11 @@ class TaskDetailPanel(QWidget):
         self.path_label = QLabel("—")
         self.path_label.setStyleSheet("color:#999; font-size:10px;")
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        # dlouhá cesta nesmí roztahovat panel
+        self.path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        # umožni úzké okno – widgety se smí zmenšit
+        for _w in (self.status_combo, self.priority_combo, self.category_edit, self.tags_edit):
+            _w.setMinimumWidth(46)
 
         def _lbl(text):
             la = QLabel(text)
@@ -116,17 +120,16 @@ class TaskDetailPanel(QWidget):
         grid.setContentsMargins(8, 4, 8, 4)
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(5)
-        grid.addWidget(self.title_edit, 0, 0, 1, 3)
-        grid.addWidget(self.flag_btn, 0, 3, Qt.AlignmentFlag.AlignRight)
-        grid.addWidget(_lbl("Stav"), 1, 0)
-        grid.addWidget(self.status_combo, 1, 1)
-        grid.addWidget(_lbl("Priorita"), 1, 2)
-        grid.addWidget(self.priority_combo, 1, 3)
-        grid.addWidget(_lbl("Kategorie"), 2, 0)
-        grid.addWidget(self.category_edit, 2, 1)
-        grid.addWidget(_lbl("Tagy"), 2, 2)
-        grid.addWidget(self.tags_edit, 2, 3)
-        grid.addWidget(self.path_label, 3, 0, 1, 4)
+        grid.addWidget(_lbl("Stav"), 0, 0)
+        grid.addWidget(self.status_combo, 0, 1)
+        grid.addWidget(_lbl("Priorita"), 0, 2)
+        grid.addWidget(self.priority_combo, 0, 3)
+        grid.addWidget(self.flag_btn, 0, 4, Qt.AlignmentFlag.AlignRight)
+        grid.addWidget(_lbl("Kategorie"), 1, 0)
+        grid.addWidget(self.category_edit, 1, 1)
+        grid.addWidget(_lbl("Tagy"), 1, 2)
+        grid.addWidget(self.tags_edit, 1, 3)
+        grid.addWidget(self.path_label, 2, 0, 1, 5)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(3, 1)
         meta_box = QGroupBox("Metadata")
@@ -195,7 +198,6 @@ class TaskDetailPanel(QWidget):
         layout.addWidget(splitter, 1)
 
         # --- signály ---
-        self.title_edit.editingFinished.connect(self._apply_title)
         self.status_combo.currentIndexChanged.connect(lambda: self._apply_field("_status", self.status_combo.currentData()))
         self.priority_combo.currentIndexChanged.connect(lambda: self._apply_field("_priority", self.priority_combo.currentData()))
         self.category_edit.editingFinished.connect(lambda: self._apply_field("_category", self.category_edit.text().strip()))
@@ -218,7 +220,6 @@ class TaskDetailPanel(QWidget):
         self.node = node
         if node is None:
             self._loading = True
-            self.title_edit.clear()
             self.category_edit.clear()
             self.tags_edit.clear()
             self.editor.clear()
@@ -232,7 +233,6 @@ class TaskDetailPanel(QWidget):
 
         self._loading = True
         self.setEnabled(True)
-        self.title_edit.setText(node.title)
         self._select_data(self.status_combo, node.meta.get("_status"))
         self._select_data(self.priority_combo, node.meta.get("_priority"))
         self.category_edit.setText(node.meta.get("_category", "") or "")
@@ -273,14 +273,6 @@ class TaskDetailPanel(QWidget):
             return
         self.node.set_field(key, value)
         self.metaChanged.emit(self.node)
-
-    def _apply_title(self) -> None:
-        if self._loading or self.node is None:
-            return
-        text = self.title_edit.text().strip() or self.node.name
-        if text != self.node.meta.get("_title"):
-            self.node.set_field("_title", text)
-            self.metaChanged.emit(self.node)
 
     def _apply_tags(self) -> None:
         if self._loading or self.node is None:
