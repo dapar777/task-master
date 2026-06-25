@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?android:attr/actionBarSize"
+        android:background="@color/colorPrimary"
+        android:elevation="4dp"
+        android:titleTextColor="#FFFFFF" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Nazev"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#424242" />
+
+            <EditText
+                android:id="@+id/titleField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Nazev ukolu"
+                android:textSize="16sp"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Stav"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#424242" />
+
+            <Spinner
+                android:id="@+id/statusSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="16dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Priorita"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:textColor="#424242"
+                    android:layout_marginRight="12dp" />
+
+                <Button
+                    android:id="@+id/prioDownBtn"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="-"
+                    android:textSize="16sp"
+                    android:padding="0dp" />
+
+                <TextView
+                    android:id="@+id/priorityValue"
+                    android:layout_width="40dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#1565C0"
+                    android:text="5" />
+
+                <Button
+                    android:id="@+id/prioUpBtn"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:text="+"
+                    android:textSize="16sp"
+                    android:padding="0dp" />
+
+                <Button
+                    android:id="@+id/flagToggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Oznacit"
+                    android:textSize="12sp"
+                    android:layout_marginLeft="16dp" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Kategorie"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#424242" />
+
+            <EditText
+                android:id="@+id/categoryField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Napr. Prace, Osobni..."
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Tagy (oddelene carkou)"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#424242" />
+
+            <EditText
+                android:id="@+id/tagsField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="tag1, tag2, tag3"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Obsah (markdown)"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#424242" />
+
+            <EditText
+                android:id="@+id/bodyField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minLines="6"
+                android:gravity="top"
+                android:inputType="textMultiLine"
+                android:hint="Obsah ukolu v markdownu..."
+                android:textSize="14sp"
+                android:layout_marginBottom="16dp" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/saveBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ulozit"
+        android:background="@color/colorPrimary"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:padding="12dp" />
+
+</LinearLayout>

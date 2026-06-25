@@ -1,0 +1,6 @@
+obj/
+gen/
+classes.dex
+*.unsigned.apk
+release.jks
+sources.txt
