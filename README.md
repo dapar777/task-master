@@ -5,26 +5,32 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 ## Funkce
 
 - 🌳 **Hierarchické úkoly** – podúkoly se ukládají jako podsložky.
-- ☑️ **Checkbox stavu** – jedním kliknutím ve stromu označíš úkol jako *hotovo* (přeškrtne se a synchronizuje se stavovým výběrem v detailu).
 - 📝 **WYSIWYG markdown editor** – tučné, kurzíva, nadpisy, seznamy, citace, kód, odkazy; přepínání na zdrojový markdown.
 - 🗂 **Ukládání na disk** ve formátu složek (viz níže), metadata v YAML.
-- 📎 **Drag & drop souborů** – přetažením souboru na úkol se přidá jako **odkaz** na souborový systém (soubor se nekopíruje).
-- 🔗 **Odkazy mezi úkoly** – propojení úkolů navzájem (cross-reference) podle stabilního ID; přežijí přejmenování i přesun, kliknutím přejdeš na cílový úkol.
-- 🔀 **Přesun úkolů** – přetažením úkolu na jiný (ve stromovém režimu) se změní jeho zařazení.
-- 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (velké karty přes celou šířku; po najetí na pravou část karty se v plovoucím okénku ukáže text úkolu).
-- 🔢 **Priorita 1–10** (10 = nejvyšší, barevně od zelené po červenou).
-- ↕️ **Vlastní pořadí** úkolů – přesun klávesami (`Ctrl+W` / `Ctrl+Q`) i **přetažením mezi položky**; pořadí je `float`, takže lze vždy vložit mezi dva. Při přepnutí na „Vlastní pořadí" se pořadí převezme z aktuálně zobrazeného uspořádání.
-- ☑️ **Checkboxy stavu** ve stromu i na kartách (Bez rušení); v kartách jde navigovat šipkami, `Space` přepne hotovo, `Enter` otevře.
-- 🔎 **Filtrování** podle názvu, stavu, kategorie, priority a tagu + **řazení**. Výčtové vlastnosti (stav, kategorie, tag) lze **zaškrtnout pro víc hodnot**, priorita se filtruje **rozmezím od–do**. Po změně filtru se automaticky vybere první vyhovující úkol.
-- 🚩 **Vlaječka** (`_flag`) – rychlé označení úkolu, přepínání `Ctrl+T`.
-- 🔢 Změna **priority z klávesnice** (`Ctrl+↑` / `Ctrl+↓`).
-- ➕ **Nový úkol** vzniká na **stejné úrovni vedle aktuálního** (jako jeho sourozenec).
-- 💾 **Uložené filtry (presety)** – pojmenovaný filtr si pamatuje podmínky, výchozí zobrazení (strom/seznam) i řazení; lze mu přiřadit **vlastní klávesovou zkratku**.
+- ⌨️ **Příkazová paleta** (`Ctrl+Shift+P`) – vyhledávání a spouštění všech příkazů i uložených filtrů.
+- ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
+- 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
+- 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
+- ➕ **Nový úkol** vzniká jako **sourozenec** aktuálního, přes **dialog s metadaty**; kategorie a priorita se **dědí** od nadřazeného úkolu.
+- ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se, synchronizováno s detailem).
+- 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
+- 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
+- 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí.
+- 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (velké karty přes celou šířku; po najetí na pravou část karty se ukáže text úkolu).
+- 📐 **Responsivní layout** – úzké/vysoké okno přesune editor pod seznam úkolů.
+- 🔢 **Priorita 1–10** (10 = nejvyšší, barevně od zelené po červenou), změna z klávesnice (`Ctrl+↑` / `Ctrl+↓`).
+- ↕️ **Vlastní pořadí** – přesun (`Ctrl+W` / `Ctrl+Q`) i tažením; pořadí je `float` (vždy lze vložit mezi). Při přepnutí na „Vlastní pořadí" se převezme aktuální uspořádání.
+- 🚩 **Vlaječka** (`_flag`) – rychlé označení, přepínání `Ctrl+T`; lze podle ní i filtrovat.
+- 🔎 **Filtrování** – defaultně jen výběr uloženého filtru, **kritéria po rozkliknutí**. Stav/kategorie/tag jsou **multi-select**, priorita **rozmezí od–do**, plus filtr podle vlaječky. Po změně filtru se vybere první vyhovující úkol.
+- 💾 **Uložené filtry (presety)** – pamatují podmínky, zobrazení i řazení; lze přiřadit **vlastní zkratku**.
+- 💾 **Perzistence stavu** – aktivní úkol, filtr a zobrazení se ukládají do `workspace/_state.yaml` a obnoví po startu.
+- ⌨️ **Plně ovladatelné klávesnicí** s **konfigurovatelnými zkratkami**.
 
 ## Struktura ukládání
 
 ```
 workspace/
+├── _state.yaml             # uložený stav UI (aktivní úkol, filtr, zobrazení)
 └── task1/
     ├── task1.md            # tělo úkolu (markdown)
     ├── task1.yaml          # metadata (klíče s podtržítkem)
@@ -71,25 +77,27 @@ Na Windows bez konzolového okna: dvojklik na **`run.vbs`** (úplně bez konzole
 a v hlavním panelu se zobrazuje místo ikony Pythonu.
 
 Při prvním spuštění se vytvoří složka `workspace/` s ukázkovým úkolem.
-Jiný pracovní prostor zvolíš přes **Otevřít prostor…** na liště.
+Jiný pracovní prostor zvolíš přes menu **Soubor → Otevřít prostor…** (`Ctrl+O`).
 
 ## Ovládání
 
+Příkazy jsou v **horním menu**, v **kontextovém menu** (pravé tlačítko ve stromu),
+přes **klávesové zkratky** a v **příkazové paletě** (`Ctrl+Shift+P`). Žádná lišta tlačítek.
+
 | Akce | Jak |
 |------|-----|
-| Nový úkol / podúkol | tlačítka vlevo, lišta nebo zkratka |
-| Přejmenovat složku úkolu | lišta → *Přejmenovat složku* nebo `F2` |
+| Nový úkol / podúkol | `Ctrl+N` / `Ctrl+Shift+N` (dialog s metadaty) |
+| Přejmenovat | `F2` – **inline** přímo v položce stromu |
+| Kopírovat / vyjmout / vložit úkol | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Vložit úkoly z textu | `Ctrl+Shift+V` (dialog: pod / za aktuální / na konec) |
 | Přidat soubor jako odkaz | přetáhni soubor z Průzkumníka na úkol (nebo do seznamu odkazů) |
-| Odkaz na jiný úkol | panel *Související úkoly* → *Přidat…*; *Přejít* / dvojklik přejde na cíl |
+| Odkaz na jiný úkol | panel *Úkoly 🔗* → *Přidat…*; *Přejít* / dvojklik přejde na cíl |
 | Přesunout úkol pod jiný | přetáhni úkol **na** cílový úkol (vnoření) |
 | Změnit pořadí | přetáhni úkol **mezi** dva úkoly, nebo `Ctrl+W`/`Ctrl+Q` |
-| Strom / seznam | přepínač na liště nebo `Ctrl+L` |
-| Řazení | pole *Řadit dle* / *Směr* v panelu filtrů |
-| Uložit aktuální filtr | menu *Filtry → Uložit aktuální filtr…* nebo `Ctrl+Shift+S` |
-| Spravovat uložené filtry | menu *Filtry → Spravovat uložené filtry…* |
-| Použít uložený filtr | menu *Filtry* nebo přiřazená zkratka |
-| Uložit | `Ctrl+S` (tělo se ukládá i automaticky) |
-| Obnovit z disku | `F5` |
+| Zobrazení strom/seznam/karty | `Ctrl+L` (cyklit) nebo menu *Zobrazení* |
+| Filtr | combo uloženého filtru; *Kritéria ▸* rozbalí podmínky |
+| Uložit / spravovat filtr | menu *Filtry* (`Ctrl+Shift+S` uložit) |
+| Uložit / obnovit | `Ctrl+S` (autosave těla) / `F5` |
 
 ## Klávesové ovládání
 
@@ -100,8 +108,12 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 
 | Zkratka | Akce | Platí kdy |
 |---------|------|-----------|
+| `Ctrl+Shift+P` | **Příkazová paleta** | kdekoli |
 | `Ctrl+N` / `Ctrl+Shift+N` | Nový úkol / podúkol | kdekoli |
-| `F2` / `Del` | Přejmenovat / smazat úkol | fokus na stromu |
+| `F2` | Přejmenovat (inline) | fokus na stromu |
+| `Del` | Smazat úkol | fokus na stromu |
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Kopírovat / vyjmout / vložit úkol | fokus na stromu |
+| `Ctrl+Shift+V` | Vložit úkoly z textu | fokus na stromu |
 | `Ctrl+S` / `F5` | Uložit / obnovit | kdekoli |
 | `Ctrl+O` | Otevřít prostor | kdekoli |
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
@@ -109,9 +121,10 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+W` / `Ctrl+Q` | Posunout úkol v pořadí nahoru / dolů | fokus na stromu nebo kartách |
 | `Ctrl+↑` / `Ctrl+↓` | Zvýšit / snížit prioritu | fokus na stromu nebo kartách |
 | `Ctrl+T` | Přepnout vlaječku 🚩 | kdekoli |
-| `Ctrl+,` | Otevřít nastavení zkratek | kdekoli |
+| `Ctrl+,` | Nastavení zkratek | kdekoli |
 | `Ctrl+F` | Přejít na hledání/filtr | kdekoli |
-| `Ctrl+1`…`Ctrl+4` | Přejít na strom / editor / název / odkazy | kdekoli |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+4` | Přejít na strom / editor / odkazy | kdekoli |
+| `Ctrl+3` | Přejmenovat úkol (inline) | kdekoli |
 | `Ctrl+B` `Ctrl+I` `Ctrl+Shift+X` | Tučné / kurzíva / přeškrtnuté | fokus v editoru |
 | `Ctrl+Shift+C` | Inline kód | fokus v editoru |
 | `Ctrl+Alt+1`…`3`, `Ctrl+Alt+0` | Nadpis 1–3 / odstavec | fokus v editoru |
@@ -151,13 +164,15 @@ app/
   editor.py             MarkdownEditor – WYSIWYG nad QTextEdit (pojmenované příkazy)
   tasktree.py           TaskTreeWidget – strom/seznam + řazení + drag & drop
   cardview.py           CardView – režim „Bez rušení" (karty + náhled textu)
-  filterpanel.py        FilterPanel – filtry a řazení
+  filterpanel.py        FilterPanel – sbalený filtr, multi-select, rozmezí priority
   detailpanel.py        TaskDetailPanel – metadata + editor + odkazy
+  taskdialog.py         dialog nového úkolu (metadata) + volba pozice vkládání
+  commandpalette.py     CommandPalette – příkazová paleta (Ctrl+Shift+P)
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
   shortcutdialog.py     dialog pro konfiguraci zkratek
   savedfilters.py       SavedFilter + FilterStore (presety v JSON)
   savedfiltersdialog.py dialog pro správu uložených filtrů
   appicon.py            kreslená moderní ikona aplikace (zaškrtnutý checkbox)
-  mainwindow.py         MainWindow – menu, lišta, navigace, propojení všeho
+  mainwindow.py         MainWindow – menu, kontextové menu, navigace, propojení
 run.vbs / run.bat       spuštění na Windows bez konzolového okna
 ```
