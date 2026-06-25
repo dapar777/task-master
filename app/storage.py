@@ -300,7 +300,8 @@ def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None) ->
     # nový úkol se zařadí na konec vlastního pořadí mezi sourozenci
     if append_to:
         meta["_order"] = float(max((n.order for n in append_to), default=-1.0) + 1.0)
-    (task_dir / f"{task_dir.name}.md").write_text(f"# {title}\n\n", encoding="utf-8")
+    # tělo zůstává prázdné (bez automatického nadpisu)
+    (task_dir / f"{task_dir.name}.md").write_text("", encoding="utf-8")
     with open(task_dir / f"{task_dir.name}.yaml", "w", encoding="utf-8") as f:
         yaml.safe_dump(meta, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
     node = TaskNode(task_dir, parent=parent)
@@ -381,6 +382,28 @@ class Workspace:
             if n.meta.get("_id") == task_id:
                 return n
         return None
+
+    # ----- uložený stav UI (do rootu workspace) -----
+    @property
+    def state_path(self) -> Path:
+        return self.root / "_state.yaml"
+
+    def load_state(self) -> dict:
+        if self.state_path.exists():
+            try:
+                data = yaml.safe_load(self.state_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+        return {}
+
+    def save_state(self, state: dict) -> None:
+        try:
+            with open(self.state_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(state, f, allow_unicode=True, sort_keys=False)
+        except Exception:
+            pass
 
     def all_categories(self) -> list[str]:
         cats = {n.meta.get("_category", "").strip() for n in self.all_nodes()}

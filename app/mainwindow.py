@@ -49,6 +49,12 @@ class MainWindow(QMainWindow):
         self._current_node = None
         self.act: dict[str, QAction] = {}
 
+        # debounce pro ukládání stavu UI do rootu workspace
+        self._state_timer = QTimer(self)
+        self._state_timer.setSingleShot(True)
+        self._state_timer.setInterval(800)
+        self._state_timer.timeout.connect(self._save_state)
+
         cfg_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation))
         self.shortcuts = ShortcutManager(cfg_dir / "shortcuts.json")
         self.filter_store = FilterStore(cfg_dir / "filters.json")
@@ -107,6 +113,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([380, 820])
+        self.main_splitter = splitter
 
         # režim „Bez rušení" – karty přes celou šířku
         self.card_view = CardView()
@@ -320,7 +327,41 @@ class MainWindow(QMainWindow):
             self.workspace.load()
         self.settings.setValue("workspace", str(path))
         self.ws_label.setText(f"Prostor: {path}")
+        self._restore_state()
+
+    def _restore_state(self) -> None:
+        """Obnoví stav uložený v rootu workspace: filtr, zobrazení, aktivní úkol."""
+        state = self.workspace.load_state() if self.workspace else {}
+        f = state.get("_filter") or {}
+        if f:
+            self.filter_panel.apply_preset(f)
+        view = state.get("_view")
+        if view in VIEW_MODES:
+            self._view_mode = view
+            self.act_view[view].setChecked(True)
         self._populate()
+        aid = state.get("_active")
+        node = self.workspace.node_by_id(aid) if aid else None
+        if node is not None:
+            self._current_node = node
+            self.detail.load(node)
+            self._select_in_view(node)
+        elif self._view_mode == "cards":
+            self.card_view.ensure_selection()
+
+    def _save_state(self) -> None:
+        if not self.workspace:
+            return
+        state = {
+            "_active": self._current_node.meta.get("_id") if self._current_node else None,
+            "_view": self._view_mode,
+            "_filter": self.filter_panel.export_preset(),
+        }
+        self.workspace.save_state(state)
+
+    def _schedule_state_save(self) -> None:
+        if self.workspace:
+            self._state_timer.start()
 
     def _create_samples(self) -> None:
         try:
@@ -366,6 +407,7 @@ class MainWindow(QMainWindow):
     def _on_filter_changed(self) -> None:
         self._populate()
         self._ensure_current_visible()
+        self._schedule_state_save()
 
     def _ensure_current_visible(self) -> None:
         """Po změně filtru: pokud aktuální úkol nevyhovuje, vyber první vyhovující."""
@@ -505,12 +547,14 @@ class MainWindow(QMainWindow):
     def _on_task_selected(self, node) -> None:
         self._current_node = node
         self.detail.load(node)
+        self._schedule_state_save()
 
     def _on_card_selected(self, node) -> None:
         self._current_node = node
         self.card_view.select_path(str(node.path))
         self.card_view.setFocus()
         self.detail.load(node)
+        self._schedule_state_save()
 
     def _on_card_opened(self, node) -> None:
         self._current_node = node
@@ -648,6 +692,7 @@ class MainWindow(QMainWindow):
         if mode == "cards":
             self.card_view.setFocus()
             self.card_view.ensure_selection()
+        self._schedule_state_save()
 
     def _cycle_view(self) -> None:
         idx = VIEW_MODES.index(self._view_mode)
@@ -798,6 +843,7 @@ class MainWindow(QMainWindow):
         if new_key == "order" and prev_key != "order" and self.workspace:
             self._reseed_order(prev_key, prev_desc)
         self._populate()
+        self._schedule_state_save()
 
     def _reseed_order(self, key: str, desc: bool) -> None:
         def reseed(nodes):
@@ -820,7 +866,32 @@ class MainWindow(QMainWindow):
         if geo is not None:
             self.restoreGeometry(geo)
 
+    # ------------------------------------------------------------------
+    # Responsivní rozložení: úzké/vysoké okno -> editor pod seznamem
+    # ------------------------------------------------------------------
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_orientation()
+
+    def _update_orientation(self) -> None:
+        if not hasattr(self, "main_splitter"):
+            return
+        # úzké a vysoké okno (na výšku) -> editor pod seznamem
+        want = (
+            Qt.Orientation.Vertical
+            if self.height() > self.width()
+            else Qt.Orientation.Horizontal
+        )
+        if self.main_splitter.orientation() != want:
+            self.main_splitter.setOrientation(want)
+            if want == Qt.Orientation.Horizontal:
+                self.main_splitter.setSizes([360, max(1, self.width() - 360)])
+            else:
+                self.main_splitter.setSizes([max(1, self.height() // 3),
+                                             max(1, self.height() * 2 // 3)])
+
     def closeEvent(self, event) -> None:
         self.detail.commit()
+        self._save_state()
         self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(event)

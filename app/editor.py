@@ -87,15 +87,15 @@ class MarkdownEditor(QWidget):
         add("fmt.h3", "H3", "Nadpis 3", lambda: self._heading(3))
         add("fmt.paragraph", "¶", "Normální odstavec", lambda: self._heading(0))
         tb.addSeparator()
-        add("fmt.bullet", "• List", "Odrážkový seznam", lambda: self._list(QTextListFormat.Style.ListDisc))
-        add("fmt.numbered", "1. List", "Číslovaný seznam", lambda: self._list(QTextListFormat.Style.ListDecimal))
-        add("fmt.quote", "” Citace", "Citace (blockquote)", self._quote)
-        add("fmt.hr", "— Čára", "Vodorovná čára", self._hr)
+        add("fmt.bullet", "•", "Odrážkový seznam", lambda: self._list(QTextListFormat.Style.ListDisc))
+        add("fmt.numbered", "1.", "Číslovaný seznam", lambda: self._list(QTextListFormat.Style.ListDecimal))
+        add("fmt.quote", "❝", "Citace (blockquote)", self._quote)
+        add("fmt.hr", "―", "Vodorovná čára", self._hr)
         tb.addSeparator()
         add("fmt.link", "🔗", "Vložit odkaz", self._link)
 
         tb.addSeparator()
-        self.source_action = add("view.toggle_source", "Zdroj (MD)", "Přepnout na zdrojový markdown", None, checkable=True)
+        self.source_action = add("view.toggle_source", "MD", "Přepnout na zdrojový markdown", None, checkable=True)
         self.source_action.toggled.connect(self._toggle_source)
 
     # ------------------------------------------------------------------
