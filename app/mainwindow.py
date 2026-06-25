@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cardview import CardView
+from .commandpalette import CommandPalette
 from .constants import APP_NAME, DEFAULT_PRIORITY, ORG_NAME
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
@@ -170,6 +171,7 @@ class MainWindow(QMainWindow):
         self._make("app.save", self._save)
         self._make("app.refresh", self._reload)
         self._make("app.shortcuts", self._open_shortcuts)
+        self._make("app.command_palette", self._open_command_palette)
         # Filtry
         self._make("filter.save", self._save_current_filter)
         self._make("filter.manage", self._manage_filters)
@@ -249,6 +251,7 @@ class MainWindow(QMainWindow):
                 m_editor.addAction(self.act[cid])
 
         m_settings = mb.addMenu("&Nastavení")
+        m_settings.addAction(self.act["app.command_palette"])
         m_settings.addAction(self.act["app.shortcuts"])
 
     # ------------------------------------------------------------------
@@ -279,6 +282,27 @@ class MainWindow(QMainWindow):
 
     def _open_shortcuts(self) -> None:
         ShortcutDialog(self.shortcuts, self).exec()
+
+    def _open_command_palette(self) -> None:
+        entries = []
+        for cid, act in self.act.items():
+            if cid == "app.command_palette":
+                continue
+            entries.append({
+                "label": self.shortcuts.label(cid) if cid in COMMAND_DEFS else act.text(),
+                "category": self.shortcuts.category(cid) if cid in COMMAND_DEFS else "",
+                "shortcut": act.shortcut().toString(),
+                "run": act.trigger,
+            })
+        for f in self.filter_store.filters:
+            entries.append({
+                "label": f.name,
+                "category": "Filtr",
+                "shortcut": f.shortcut,
+                "run": (lambda fid=f.id: self._apply_saved_filter_by_id(fid)),
+            })
+        entries.sort(key=lambda e: (e["category"].lower(), e["label"].lower()))
+        CommandPalette(entries, self).exec()
 
     # ------------------------------------------------------------------
     # Workspace
