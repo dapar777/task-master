@@ -431,11 +431,16 @@ class MainWindow(QMainWindow):
         self._schedule_state_save()
 
     def _ensure_current_visible(self) -> None:
-        """Po změně filtru: pokud aktuální úkol nevyhovuje, vyber první vyhovující."""
+        """Po změně filtru zajisti, že je vždy vybraný (zvýrazněný) nějaký úkol.
+
+        Pokud aktuální úkol vyhovuje, jen ho znovu označ ve view; jinak vyber
+        první vyhovující. Bez kradení klávesového fokusu (nebliká při psaní).
+        """
         if not self.workspace:
             return
         cur = self._current_node
         if cur is not None and self.filter_panel.matches(cur):
+            self._select_in_view(cur)
             return
         visible = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
         if visible:
@@ -715,8 +720,34 @@ class MainWindow(QMainWindow):
         node.set_field("_status", status)
         if self.detail.node is node:
             self.detail.sync_status(status)
-        # přebudování stromu odlož mimo právě probíhající itemChanged signál
-        QTimer.singleShot(0, self._populate)
+        going_done = status == "done"
+        # přebudování odlož mimo právě probíhající itemChanged signál;
+        # po dokončení skoč na první úkol a odroluj nahoru
+        QTimer.singleShot(0, lambda: self._after_status_toggle(going_done))
+
+    def _after_status_toggle(self, going_done: bool) -> None:
+        self._populate()
+        if going_done:
+            self._focus_first_task()
+
+    def _focus_first_task(self) -> None:
+        """Vybere první úkol v aktuálním zobrazení a odroluje nahoru."""
+        if self._view_mode == "cards":
+            if self.card_view._order:
+                path = self.card_view._order[0]
+                self.card_view.select_path(path)
+                self.card_view.verticalScrollBar().setValue(0)
+                self.card_view.setFocus()
+                node = next((n for n in self.workspace.all_nodes() if str(n.path) == path), None)
+                if node is not None:
+                    self._current_node = node
+                    self.detail.load(node)
+        else:
+            if self.tree.topLevelItemCount():
+                it = self.tree.topLevelItem(0)
+                self.tree.setCurrentItem(it)
+                self.tree.verticalScrollBar().setValue(0)
+                self.tree.setFocus()
 
     # ------------------------------------------------------------------
     # Odkazy mezi úkoly
@@ -795,6 +826,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("view_mode", view)
         self.act_view[view].setChecked(True)
         self._populate()
+        self._ensure_current_visible()
         self.status.showMessage(f"Filtr: {sf.name}", 2500)
 
     def _save_current_filter(self) -> None:

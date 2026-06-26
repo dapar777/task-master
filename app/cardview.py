@@ -42,31 +42,6 @@ def _props_text(node) -> str:
     return "    ·    ".join(parts)
 
 
-class _PreviewLabel(QLabel):
-    """Pravá zóna karty – po najetí lazy-načte text úkolu do tooltipu."""
-
-    def __init__(self, provider):
-        super().__init__("📄\náhled\ntextu")
-        self._provider = provider
-        self._loaded = False
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFixedWidth(120)
-        self.setStyleSheet(
-            "color:#888; border-left:1px solid #e0e0e0; font-size:11px;"
-        )
-
-    def enterEvent(self, event):
-        if not self._loaded:
-            text = (self._provider() or "(prázdný popis)").strip()[:4000]
-            self.setToolTip(
-                "<div style='white-space:pre-wrap; max-width:520px'>"
-                + html.escape(text)
-                + "</div>"
-            )
-            self._loaded = True
-        super().enterEvent(event)
-
-
 class CardWidget(QFrame):
     selected = Signal(object)
     opened = Signal(object)
@@ -114,13 +89,25 @@ class CardWidget(QFrame):
         left.addWidget(path)
         left.addWidget(props)
 
-        preview = _PreviewLabel(lambda n=node: n.read_body())
-
         row = QHBoxLayout(self)
-        row.setContentsMargins(10, 10, 6, 10)
+        row.setContentsMargins(10, 8, 10, 8)
         row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(left, 1)
-        row.addWidget(preview)
+
+        # náhled textu jako tooltip celé karty (zobrazí se u kurzoru i vpravo)
+        self._body_provider = lambda n=node: n.read_body()
+        self._tip_loaded = False
+
+    def enterEvent(self, event):
+        if not self._tip_loaded:
+            text = (self._body_provider() or "(prázdný popis)").strip()[:4000]
+            self.setToolTip(
+                "<div style='white-space:pre-wrap; max-width:520px'>"
+                + html.escape(text)
+                + "</div>"
+            )
+            self._tip_loaded = True
+        super().enterEvent(event)
 
     def _on_check(self, checked: bool) -> None:
         self.statusToggled.emit(self.node, "done" if checked else "todo")
@@ -183,10 +170,11 @@ class CardView(QScrollArea):
 
         for node in nodes:
             card = CardWidget(node)
+            card.setMaximumWidth(560)  # užší obdélníky, vlevo
             card.selected.connect(self.cardSelected)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
-            self.vbox.addWidget(card)
+            self.vbox.addWidget(card, 0, Qt.AlignmentFlag.AlignLeft)
             key = str(node.path)
             self._cards[key] = card
             self._order.append(key)
