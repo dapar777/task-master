@@ -11,8 +11,9 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
 - 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
 - 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
-- ➕ **Nový úkol** vzniká jako **sourozenec** aktuálního, přes **dialog s metadaty**; kategorie a priorita se **dědí** od nadřazeného úkolu.
-- ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se, synchronizováno s detailem).
+- ➕ **Nový úkol** vzniká jako **sourozenec** aktuálního, přes **dialog s metadaty** (i s klávesovými zkratkami `Ctrl+T` / `Ctrl+↑↓`); kategorie a priorita se **dědí** od nadřazeného úkolu.
+- ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. V režimu Bez rušení se **hotové úkoly řadí až za nedokončené**.
+- ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
 - 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
 - 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí.
@@ -114,6 +115,8 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Del` | Smazat úkol | fokus na stromu |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Kopírovat / vyjmout / vložit úkol | fokus na stromu |
 | `Ctrl+Shift+V` | Vložit úkoly z textu | fokus na stromu |
+| `Ctrl+Z` | Vrátit zpět (undo) | fokus na stromu / kartách |
+| `Ctrl+Enter` | Přepnout hotovo | fokus na stromu / kartách |
 | `Ctrl+S` / `F5` | Uložit / obnovit | kdekoli |
 | `Ctrl+O` | Otevřít prostor | kdekoli |
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
@@ -166,7 +169,8 @@ app/
   cardview.py           CardView – režim „Bez rušení" (karty + náhled textu)
   filterpanel.py        FilterPanel – sbalený filtr, multi-select, rozmezí priority
   detailpanel.py        TaskDetailPanel – metadata + editor + odkazy
-  taskdialog.py         dialog nového úkolu (metadata) + volba pozice vkládání
+  taskdialog.py         dialog nového úkolu (metadata + zkratky) + volba pozice vkládání
+  undo.py               UndoManager – snapshoty workspace pro Ctrl+Z
   commandpalette.py     CommandPalette – příkazová paleta (Ctrl+Shift+P)
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
   shortcutdialog.py     dialog pro konfiguraci zkratek

@@ -31,6 +31,7 @@ from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
 from .storage import Workspace, parse_indented_text, serialize_node
 from .taskdialog import TaskDialog, ask_paste_position
+from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_nodes
 
 VIEW_MODES = ("tree", "list", "cards")
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
             self._view_mode = "tree"
         self._current_node = None
         self._clip = None  # schránka úkolu: {"mode": "copy"|"cut", "data": ..., "src_id": ...}
+        self.undo = UndoManager()
         self.act: dict[str, QAction] = {}
 
         # debounce pro ukládání stavu UI do rootu workspace
@@ -166,6 +168,14 @@ class MainWindow(QMainWindow):
         self._make("task.cut", self._cut_task, target=self.tree)
         self._make("task.paste", self._paste_task, target=self.tree)
         self._make("task.paste_text", self._paste_from_text, target=self.tree)
+        # přepnout hotovo (strom i karty)
+        td = self._make("task.toggle_done", self._toggle_done, target=self.tree)
+        td.setAutoRepeat(False)
+        self.card_view.addAction(td)
+        # undo (strom i karty; editor má vlastní Ctrl+Z)
+        un = self._make("edit.undo", self._undo, target=self.tree)
+        un.setAutoRepeat(False)
+        self.card_view.addAction(un)
         # Aplikace
         self._make("app.open_workspace", self._choose_workspace)
         self._make("app.save", self._save)
@@ -207,6 +217,7 @@ class MainWindow(QMainWindow):
         m_file = mb.addMenu("&Soubor")
         m_file.addAction(self.act["app.open_workspace"])
         m_file.addSeparator()
+        m_file.addAction(self.act["edit.undo"])
         m_file.addAction(self.act["app.save"])
         m_file.addAction(self.act["app.refresh"])
         m_file.addSeparator()
@@ -226,6 +237,7 @@ class MainWindow(QMainWindow):
         m_task.addAction(self.act["task.priority_up"])
         m_task.addAction(self.act["task.priority_down"])
         m_task.addAction(self.act["task.flag"])
+        m_task.addAction(self.act["task.toggle_done"])
 
         m_view = mb.addMenu("&Zobrazení")
         for cid in ("view.tree", "view.list", "view.cards"):
@@ -399,7 +411,10 @@ class MainWindow(QMainWindow):
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)
             nodes = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
-            self.card_view.populate(sort_nodes(nodes, sort_key, sort_desc))
+            nodes = sort_nodes(nodes, sort_key, sort_desc)
+            # v režimu Bez rušení řadíme dokončené úkoly až za nedokončené (stabilně)
+            nodes.sort(key=lambda n: n.meta.get("_status") == "done")
+            self.card_view.populate(nodes)
         else:
             self.stack.setCurrentIndex(0)
             self.tree.populate(
@@ -474,6 +489,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         if parent is not None:
             node = parent.create_child(vals["title"])
         else:
@@ -501,6 +517,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         child = parent.create_child(vals["title"])
         self._apply_dialog_meta(child, vals)
         new_id = child.meta.get("_id")
@@ -538,6 +555,7 @@ class MainWindow(QMainWindow):
                 return
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         new = self.workspace.create_subtree(target, self._clip["data"])
         new_id = new.meta.get("_id")
         if self._clip["mode"] == "cut":
@@ -566,6 +584,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         cur_id = cur.task_id if cur is not None else None
         if pos == "under":
             parent_node = cur
@@ -596,7 +615,8 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", "task.paste_text", None,
-                    "task.rename", "task.delete", None, "task.flag"):
+                    "task.rename", "task.delete", None, "task.flag", "task.toggle_done",
+                    None, "edit.undo"):
             if cid is None:
                 menu.addSeparator()
             else:
@@ -615,6 +635,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Smazat úkol", msg) != QMessageBox.StandardButton.Yes:
             return
         self.detail.discard()
+        self._snapshot()
         node.delete()
         self._current_node = None
         self.detail.load(None)
@@ -633,6 +654,7 @@ class MainWindow(QMainWindow):
     def _on_rename(self, node, new_title: str) -> None:
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         try:
             node.rename_dir(new_title)
         except Exception as e:  # noqa: BLE001
@@ -645,6 +667,7 @@ class MainWindow(QMainWindow):
     def _on_reparent(self, node, new_parent) -> None:
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         try:
             if new_parent is None:
                 self.workspace.move_to_root(node)
@@ -688,6 +711,7 @@ class MainWindow(QMainWindow):
         self._populate()
 
     def _on_status_toggled(self, node, status: str) -> None:
+        self._snapshot()
         node.set_field("_status", status)
         if self.detail.node is node:
             self.detail.sync_status(status)
@@ -902,6 +926,7 @@ class MainWindow(QMainWindow):
         # vlož mezi vizuální sousedy (změní jen číslo pořadí, bez přeřazení rodiče)
         ordered_wo = [n for n in ordered if n is not node]
         insert_at = idx - 1 if delta < 0 else idx + 1
+        self._snapshot()
         node.set_order(self._order_between(ordered_wo, insert_at))
         self._populate()
         self._select_in_view(node, focus=True)
@@ -911,6 +936,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
+        self._snapshot()
         dragged_id, ref_id = dragged.task_id, ref.task_id
         try:
             if dragged.parent is not ref.parent:
@@ -944,6 +970,7 @@ class MainWindow(QMainWindow):
         new = max(1, min(10, p + delta))
         if new == p:
             return
+        self._snapshot()
         node.set_field("_priority", new)
         if self.detail.node is node:
             self.detail.sync_priority(new)
@@ -951,10 +978,41 @@ class MainWindow(QMainWindow):
         self._select_in_view(node, focus=True)
         self.status.showMessage(f"Priorita: {new}", 1500)
 
+    # ------------------------------------------------------------------
+    # Undo + přepnutí hotovo
+    # ------------------------------------------------------------------
+    def _snapshot(self) -> None:
+        if self.workspace:
+            self.undo.snapshot(self.workspace.root)
+
+    def _undo(self) -> None:
+        if not self.workspace or not self.undo.can_undo():
+            self.status.showMessage("Není co vrátit", 1500)
+            return
+        sel = self._current_node
+        sel_path = str(sel.path) if sel else None
+        self.detail.discard()
+        self.detail.load(None)
+        self._current_node = None
+        if self.undo.restore_last(self.workspace.root):
+            self.workspace.load()
+            self._populate()
+            if sel_path:
+                self._select_path_in_view(sel_path)
+            self.status.showMessage("Vráceno zpět", 1500)
+
+    def _toggle_done(self) -> None:
+        node = self._current_node
+        if node is None:
+            return
+        new = "todo" if node.meta.get("_status") == "done" else "done"
+        self._on_status_toggled(node, new)
+
     def _toggle_flag(self) -> None:
         node = self._current_node
         if node is None:
             return
+        self._snapshot()
         state = node.toggle_flag()
         if self.detail.node is node:
             self.detail.sync_flag(state)
@@ -1019,4 +1077,5 @@ class MainWindow(QMainWindow):
         self.detail.commit()
         self._save_state()
         self.settings.setValue("geometry", self.saveGeometry())
+        self.undo.cleanup()
         super().closeEvent(event)

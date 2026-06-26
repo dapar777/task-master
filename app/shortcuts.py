@@ -40,6 +40,8 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "task.cut": ("Vyjmout úkol", "Úkoly", "Ctrl+X", "tree"),
     "task.paste": ("Vložit úkol", "Úkoly", "Ctrl+V", "tree"),
     "task.paste_text": ("Vložit úkoly z textu", "Úkoly", "Ctrl+Shift+V", "tree"),
+    "task.toggle_done": ("Přepnout hotovo", "Úkoly", "Ctrl+Return", "reorder"),
+    "edit.undo": ("Vrátit zpět", "Úkoly", "Ctrl+Z", "reorder"),
     # Aplikace / zobrazení
     "app.open_workspace": ("Otevřít prostor…", "Aplikace", "Ctrl+O", "window"),
     "app.save": ("Uložit", "Aplikace", "Ctrl+S", "window"),

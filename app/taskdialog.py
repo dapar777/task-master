@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -61,6 +62,16 @@ class TaskDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
         self.title_edit.setFocus()
+
+        # klávesové zkratky pro metadata přímo v dialogu
+        QShortcut(QKeySequence("Ctrl+T"), self, activated=self.flag_check.toggle)
+        QShortcut(QKeySequence("Ctrl+Up"), self, activated=lambda: self._bump_priority(+1))
+        QShortcut(QKeySequence("Ctrl+Down"), self, activated=lambda: self._bump_priority(-1))
+
+    def _bump_priority(self, delta: int) -> None:
+        i = self.priority_combo.currentIndex()
+        i = max(0, min(self.priority_combo.count() - 1, i + delta))
+        self.priority_combo.setCurrentIndex(i)
 
     def showEvent(self, event):
         super().showEvent(event)
