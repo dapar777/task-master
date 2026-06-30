@@ -24,6 +24,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 🚩 **Vlaječka** (`_flag`) – rychlé označení, přepínání `Ctrl+T`; lze podle ní i filtrovat.
 - 🔎 **Filtrování** – defaultně jen výběr uloženého filtru, **kritéria po rozkliknutí**. Stav/kategorie/tag jsou **multi-select**, priorita **rozmezí od–do**, plus filtr podle vlaječky. Po změně filtru se vybere první vyhovující úkol.
 - 💾 **Uložené filtry (presety)** – pamatují podmínky, zobrazení i řazení; lze přiřadit **vlastní zkratku**.
+- 📌 **Aktivní úkol zůstává vidět** – nově vytvořený nebo právě upravený úkol, který nevyhovuje filtru, zůstane zobrazený, dokud je aktivní (po opuštění zmizí). Změna filtru naopak přepne na první vyhovující.
 - 💾 **Perzistence stavu** – aktivní úkol, filtr a zobrazení se ukládají do `workspace/_state.yaml` a obnoví po startu.
 - ⌨️ **Plně ovladatelné klávesnicí** s **konfigurovatelnými zkratkami**.
 

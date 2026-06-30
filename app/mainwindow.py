@@ -404,13 +404,21 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Naplnění stromu
     # ------------------------------------------------------------------
+    def _match(self, node) -> bool:
+        """Úkol je vidět, když vyhovuje filtru NEBO je právě aktivní.
+
+        Tím zůstane nově vytvořený / právě upravený úkol zobrazený, i když
+        nevyhovuje filtru – dokud je aktivní (vybraný).
+        """
+        return self.filter_panel.matches(node) or node is self._current_node
+
     def _populate(self) -> None:
         if not self.workspace:
             return
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)
-            nodes = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
+            nodes = [n for n in self.workspace.all_nodes() if self._match(n)]
             nodes = sort_nodes(nodes, sort_key, sort_desc)
             # v režimu Bez rušení řadíme dokončené úkoly až za nedokončené (stabilně)
             nodes.sort(key=lambda n: n.meta.get("_status") == "done")
@@ -418,7 +426,7 @@ class MainWindow(QMainWindow):
         else:
             self.stack.setCurrentIndex(0)
             self.tree.populate(
-                self.workspace.roots, self._view_mode == "tree", self.filter_panel.matches,
+                self.workspace.roots, self._view_mode == "tree", self._match,
                 sort_key, sort_desc,
             )
         self.filter_panel.populate_dynamic(
@@ -433,8 +441,9 @@ class MainWindow(QMainWindow):
     def _ensure_current_visible(self) -> None:
         """Po změně filtru zajisti, že je vždy vybraný (zvýrazněný) nějaký úkol.
 
-        Pokud aktuální úkol vyhovuje, jen ho znovu označ ve view; jinak vyber
-        první vyhovující. Bez kradení klávesového fokusu (nebliká při psaní).
+        Aktivní úkol zůstává zobrazený i když nevyhovuje filtru (viz _match),
+        takže ho jen znovu označ. Pokud žádný aktivní není, vyber první vyhovující.
+        Bez kradení klávesového fokusu (nebliká při psaní).
         """
         if not self.workspace:
             return
@@ -442,15 +451,16 @@ class MainWindow(QMainWindow):
         if cur is not None and self.filter_panel.matches(cur):
             self._select_in_view(cur)
             return
+        # po ZMĚNĚ FILTRU aktuální nevyhovuje -> přepni na první vyhovující
+        # (a přebuduj, aby starý nevyhovující už nebyl držený jako aktivní)
         visible = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
-        if visible:
-            key, desc = self.filter_panel.current_sort()
-            first = sort_nodes(visible, key, desc)[0]
-            self._current_node = first
-            self.detail.load(first)
-            self._select_in_view(first)
+        key, desc = self.filter_panel.current_sort()
+        self._current_node = sort_nodes(visible, key, desc)[0] if visible else None
+        self._populate()
+        if self._current_node is not None:
+            self.detail.load(self._current_node)
+            self._select_in_view(self._current_node)
         else:
-            self._current_node = None
             self.detail.load(None)
 
     def _reload(self) -> None:
@@ -508,6 +518,8 @@ class MainWindow(QMainWindow):
             cu = self.workspace.node_by_id(cur_id)
             if cu is not None and cu.parent is nn.parent:
                 self._place_node(nn, cu, before=False)
+        if nn is not None:
+            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
         self._populate()
         if nn is not None:
             self._select_path_in_view(str(nn.path))
@@ -528,6 +540,8 @@ class MainWindow(QMainWindow):
         new_id = child.meta.get("_id")
         self.workspace.load()
         nn = self.workspace.node_by_id(new_id)
+        if nn is not None:
+            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
         self._populate()
         if nn is not None:
             self._select_path_in_view(str(nn.path))
@@ -569,8 +583,10 @@ class MainWindow(QMainWindow):
                 src.delete()
             self._clip = None  # vyjmutí je jednorázové
         self.workspace.load()
-        self._populate()
         nn = self.workspace.node_by_id(new_id)
+        if nn is not None:
+            self._current_node = nn
+        self._populate()
         if nn is not None:
             self._select_path_in_view(str(nn.path))
 
@@ -609,11 +625,12 @@ class MainWindow(QMainWindow):
                 if nd is not None and prev is not None and nd.parent is prev.parent:
                     self._place_node(nd, prev, before=False)
                     prev = nd
+        first = self.workspace.node_by_id(created_ids[0]) if created_ids else None
+        if first is not None:
+            self._current_node = first
         self._populate()
-        if created_ids:
-            first = self.workspace.node_by_id(created_ids[0])
-            if first is not None:
-                self._select_path_in_view(str(first.path))
+        if first is not None:
+            self._select_path_in_view(str(first.path))
         self.status.showMessage(f"Vloženo úkolů: {len(created_ids)}", 2000)
 
     def _show_tree_menu(self, pos) -> None:
@@ -689,16 +706,28 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Signály z panelů
     # ------------------------------------------------------------------
+    def _drop_unpinned(self, prev, new) -> None:
+        """Pokud předchozí (force-zobrazený) úkol nevyhovuje filtru, přebuduj
+        zobrazení, aby po opuštění zmizel."""
+        if prev is not None and prev is not new and not self.filter_panel.matches(prev):
+            self._populate()
+            if new is not None:
+                self._select_in_view(new)
+
     def _on_task_selected(self, node) -> None:
+        prev = self._current_node
         self._current_node = node
         self.detail.load(node)
+        self._drop_unpinned(prev, node)
         self._schedule_state_save()
 
     def _on_card_selected(self, node) -> None:
+        prev = self._current_node
         self._current_node = node
         self.card_view.select_path(str(node.path))
         self.card_view.setFocus()
         self.detail.load(node)
+        self._drop_unpinned(prev, node)
         self._schedule_state_save()
 
     def _on_card_opened(self, node) -> None:
@@ -947,7 +976,7 @@ class MainWindow(QMainWindow):
         if self._view_mode == "tree":
             seq = node.parent.children if node.parent else self.workspace.roots
         else:
-            seq = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
+            seq = [n for n in self.workspace.all_nodes() if self._match(n)]
         ordered = sort_nodes(seq, "order", False)
         if node not in ordered or len(ordered) < 2:
             return
