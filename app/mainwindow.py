@@ -504,8 +504,15 @@ class MainWindow(QMainWindow):
             return
         cur = self._current_node
         parent = cur.parent if cur is not None else None
-        vals = TaskDialog.get(self, "Nový úkol", self._inherit_defaults(parent or cur))
+        default_label = f"za „{cur.title}“" if cur is not None else "nový kořenový úkol"
+        vals = TaskDialog.get(
+            self, "Nový úkol", self._inherit_defaults(parent or cur),
+            roots=self.workspace.roots, default_label=default_label,
+        )
         if not vals:
+            return
+        if vals.get("target"):
+            self._create_under_target(vals["target"], vals)
             return
         self.detail.commit()
         self.detail.discard()
@@ -534,8 +541,14 @@ class MainWindow(QMainWindow):
         if parent is None:
             QMessageBox.information(self, "Podúkol", "Nejprve vyber nadřazený úkol.")
             return
-        vals = TaskDialog.get(self, f"Nový podúkol pod „{parent.title}“", self._inherit_defaults(parent))
+        vals = TaskDialog.get(
+            self, f"Nový podúkol pod „{parent.title}“", self._inherit_defaults(parent),
+            roots=self.workspace.roots, default_label=f"pod „{parent.title}“",
+        )
         if not vals:
+            return
+        if vals.get("target"):
+            self._create_under_target(vals["target"], vals)
             return
         self.detail.commit()
         self.detail.discard()
@@ -552,6 +565,26 @@ class MainWindow(QMainWindow):
                 # rodič musí být viditelný při výpočtu zařazení (viz _match)
                 self._current_node = pnode
                 self._place_new_subtask(nn, pnode)
+            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
+        self._populate()
+        if nn is not None:
+            self._select_path_in_view(str(nn.path))
+
+    def _create_under_target(self, target_id: str, vals: dict) -> None:
+        """Vytvoří úkol jako podúkol zvoleného cíle (na konec jeho podúkolů)."""
+        tnode = self.workspace.node_by_id(target_id)
+        if tnode is None:
+            QMessageBox.warning(self, "Umístění", "Zvolený cílový úkol už neexistuje.")
+            return
+        self.detail.commit()
+        self.detail.discard()
+        self._snapshot()
+        child = tnode.create_child(vals["title"])
+        self._apply_dialog_meta(child, vals)
+        new_id = child.meta.get("_id")
+        self.workspace.load()
+        nn = self.workspace.node_by_id(new_id)
+        if nn is not None:
             self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
         self._populate()
         if nn is not None:

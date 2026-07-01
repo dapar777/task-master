@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -11,20 +12,28 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLineEdit,
     QMessageBox,
+    QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from .constants import DEFAULT_PRIORITY, DEFAULT_STATUS, PRIORITIES, STATUSES
+from .tasktree import breadcrumb
 
 
 class TaskDialog(QDialog):
     """Dialog pro zadání úkolu i s metadaty."""
 
-    def __init__(self, window_title="Nový úkol", defaults=None, parent=None):
+    def __init__(self, window_title="Nový úkol", defaults=None, parent=None,
+                 roots=None, default_label="výchozí umístění"):
         super().__init__(parent)
         defaults = defaults or {}
         self.setWindowTitle(window_title)
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(380)
+        self._roots = roots or []
+        self._temp_idx = None  # dočasná položka „ze stromu" v comboboxu
 
         self.title_edit = QLineEdit(defaults.get("title", ""))
         self.title_edit.setPlaceholderText("název úkolu")
@@ -44,6 +53,13 @@ class TaskDialog(QDialog):
         self.flag_check = QCheckBox("Vlaječka")
         self.flag_check.setChecked(bool(defaults.get("flag", False)))
 
+        # výběr umístění nového úkolu (combobox: výchozí + top-level „_" úkoly)
+        self.location_combo = QComboBox()
+        self.location_combo.addItem(f"⟐ {default_label}", None)
+        for r in self._roots:
+            if r.title.startswith("_"):
+                self.location_combo.addItem(f"⌂ {r.title}", r.task_id)
+
         form = QFormLayout()
         form.addRow("Název:", self.title_edit)
         form.addRow("Stav:", self.status_combo)
@@ -51,6 +67,31 @@ class TaskDialog(QDialog):
         form.addRow("Kategorie:", self.category_edit)
         form.addRow("Tagy:", self.tags_edit)
         form.addRow("", self.flag_check)
+        form.addRow("Umístění (Ctrl+L):", self.location_combo)
+
+        # rozklikávací výběr libovolné cesty ze stromu + textové hledání
+        self.tree_toggle = QToolButton()
+        self.tree_toggle.setText("Vybrat ze stromu ▸")
+        self.tree_toggle.setCheckable(True)
+        self.tree_toggle.setAutoRaise(True)
+        self.tree_toggle.toggled.connect(self._toggle_tree)
+
+        self.loc_search = QLineEdit()
+        self.loc_search.setPlaceholderText("hledat v úkolech…")
+        self.loc_search.textChanged.connect(self._filter_tree)
+        self.loc_tree = QTreeWidget()
+        self.loc_tree.setHeaderHidden(True)
+        self.loc_tree.setMaximumHeight(220)
+        for r in self._roots:
+            self._add_tree_item(r, None)
+        self.loc_tree.itemSelectionChanged.connect(self._on_tree_pick)
+
+        self.loc_box = QWidget()
+        loc_v = QVBoxLayout(self.loc_box)
+        loc_v.setContentsMargins(0, 0, 0, 0)
+        loc_v.addWidget(self.loc_search)
+        loc_v.addWidget(self.loc_tree)
+        self.loc_box.setVisible(False)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -60,6 +101,8 @@ class TaskDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self.tree_toggle)
+        layout.addWidget(self.loc_box)
         layout.addWidget(buttons)
         self.title_edit.setFocus()
 
@@ -67,11 +110,68 @@ class TaskDialog(QDialog):
         QShortcut(QKeySequence("Ctrl+T"), self, activated=self.flag_check.toggle)
         QShortcut(QKeySequence("Ctrl+Up"), self, activated=lambda: self._bump_priority(+1))
         QShortcut(QKeySequence("Ctrl+Down"), self, activated=lambda: self._bump_priority(-1))
+        # zkratka pro rozbalení comboboxu s umístěním
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.location_combo.showPopup)
 
     def _bump_priority(self, delta: int) -> None:
         i = self.priority_combo.currentIndex()
         i = max(0, min(self.priority_combo.count() - 1, i + delta))
         self.priority_combo.setCurrentIndex(i)
+
+    # ----- výběr umístění -----
+    def _add_tree_item(self, node, parent_item) -> None:
+        it = QTreeWidgetItem([node.title])
+        it.setData(0, Qt.ItemDataRole.UserRole, node)
+        if parent_item is None:
+            self.loc_tree.addTopLevelItem(it)
+        else:
+            parent_item.addChild(it)
+        for c in node.children:
+            self._add_tree_item(c, it)
+
+    def _toggle_tree(self, on: bool) -> None:
+        self.tree_toggle.setText("Vybrat ze stromu ▾" if on else "Vybrat ze stromu ▸")
+        self.loc_box.setVisible(on)
+        if on:
+            self.loc_search.setFocus()
+        self.adjustSize()
+
+    def _on_tree_pick(self) -> None:
+        items = self.loc_tree.selectedItems()
+        if not items:
+            return
+        node = items[0].data(0, Qt.ItemDataRole.UserRole)
+        if node is not None:
+            self._select_target(node.task_id, breadcrumb(node))
+
+    def _select_target(self, tid, text: str) -> None:
+        """Vybere cíl v comboboxu; když tam ještě není, přidá dočasnou položku."""
+        if self._temp_idx is not None:
+            self.location_combo.removeItem(self._temp_idx)
+            self._temp_idx = None
+        idx = self.location_combo.findData(tid)
+        if idx < 0:
+            self.location_combo.addItem("↳ " + text, tid)
+            idx = self.location_combo.count() - 1
+            self._temp_idx = idx
+        self.location_combo.setCurrentIndex(idx)
+
+    def _filter_tree(self, text: str) -> None:
+        q = text.strip().lower()
+
+        def visit(item) -> bool:
+            match = q in item.text(0).lower()
+            child_vis = False
+            for i in range(item.childCount()):
+                child_vis = visit(item.child(i)) or child_vis
+            visible = (not q) or match or child_vis
+            item.setHidden(not visible)
+            if q and child_vis:
+                item.setExpanded(True)
+            return visible
+
+        for i in range(self.loc_tree.topLevelItemCount()):
+            visit(self.loc_tree.topLevelItem(i))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -96,11 +196,13 @@ class TaskDialog(QDialog):
             "category": self.category_edit.text().strip(),
             "tags": tags,
             "flag": self.flag_check.isChecked(),
+            "target": self.location_combo.currentData(),  # None = výchozí umístění
         }
 
     @staticmethod
-    def get(parent, window_title, defaults=None) -> dict | None:
-        dlg = TaskDialog(window_title, defaults, parent)
+    def get(parent, window_title, defaults=None, roots=None,
+            default_label="výchozí umístění") -> dict | None:
+        dlg = TaskDialog(window_title, defaults, parent, roots, default_label)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             vals = dlg.values()
             if vals["title"]:
