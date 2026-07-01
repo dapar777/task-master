@@ -504,7 +504,7 @@ class MainWindow(QMainWindow):
             return
         cur = self._current_node
         parent = cur.parent if cur is not None else None
-        default_label = f"za „{cur.title}“" if cur is not None else "nový kořenový úkol"
+        default_label = f"pod „{parent.title}“" if parent is not None else "nový kořenový úkol"
         vals = TaskDialog.get(
             self, "Nový úkol", self._inherit_defaults(parent or cur),
             roots=self.workspace.roots, default_label=default_label,
