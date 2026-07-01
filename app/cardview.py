@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -62,6 +63,10 @@ class CardWidget(QFrame):
         self.node = node
         self.setObjectName("card")
         self.setProperty("selected", False)
+        # šířka se přizpůsobí oknu; výška roste podle zalomeného obsahu
+        sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
 
         status = node.meta.get("_status", "")
         done = status == "done"
@@ -100,6 +105,7 @@ class CardWidget(QFrame):
 
         path = QLabel(breadcrumb(node))
         path.setStyleSheet("color:#666; font-size:11px;")
+        path.setWordWrap(True)  # ať nediktuje minimální šířku karty
 
         props = QLabel(_props_text(node))
         props.setStyleSheet("color:#333; font-size:12px;")
@@ -168,6 +174,8 @@ class CardView(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
+        # karty se přizpůsobí šířce okna – nikdy vodorovné rolování
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.container = QWidget()
         self.vbox = QVBoxLayout(self.container)
@@ -198,11 +206,10 @@ class CardView(QScrollArea):
 
         for node in nodes:
             card = CardWidget(node)
-            card.setFixedWidth(249)  # všechny obdélníky stejně široké, vlevo
             card.selected.connect(self.cardSelected)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
-            self.vbox.addWidget(card, 0, Qt.AlignmentFlag.AlignLeft)
+            self.vbox.addWidget(card)  # roztáhne se na šířku okna
             key = str(node.path)
             self._cards[key] = card
             self._order.append(key)
