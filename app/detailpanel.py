@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -198,7 +199,7 @@ class TaskDetailPanel(QWidget):
         layout.addWidget(splitter, 1)
 
         # --- signály ---
-        self.status_combo.currentIndexChanged.connect(lambda: self._apply_field("_status", self.status_combo.currentData()))
+        self.status_combo.currentIndexChanged.connect(self._on_status_combo_changed)
         self.priority_combo.currentIndexChanged.connect(lambda: self._apply_field("_priority", self.priority_combo.currentData()))
         self.category_edit.editingFinished.connect(lambda: self._apply_field("_category", self.category_edit.text().strip()))
         self.tags_edit.editingFinished.connect(self._apply_tags)
@@ -268,6 +269,30 @@ class TaskDetailPanel(QWidget):
     # ------------------------------------------------------------------
     # Aplikace metadat
     # ------------------------------------------------------------------
+    def _on_status_combo_changed(self) -> None:
+        if self._loading or self.node is None:
+            return
+        value = self.status_combo.currentData()
+        if value == "done":
+            n = self.node.incomplete_subtasks()
+            if n and not self._confirm_complete(n):
+                # zamítnuto – vrať combo na skutečný stav úkolu bez uložení
+                self._loading = True
+                self._select_data(self.status_combo, self.node.meta.get("_status"))
+                self._loading = False
+                return
+        self._apply_field("_status", value)
+
+    def _confirm_complete(self, count: int) -> bool:
+        r = QMessageBox.question(
+            self, "Dokončit úkol?",
+            f"Úkol „{self.node.title}“ má {count} nedokončených podúkolů.\n"
+            "Opravdu ho chceš označit jako hotový?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return r == QMessageBox.StandardButton.Yes
+
     def _apply_field(self, key: str, value) -> None:
         if self._loading or self.node is None:
             return

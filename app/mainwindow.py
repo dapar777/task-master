@@ -750,7 +750,25 @@ class MainWindow(QMainWindow):
             self.detail.refresh_links_external()
         self._populate()
 
+    def _confirm_complete(self, node) -> bool:
+        """Před označením úkolu za hotový potvrď, pokud má nedokončené podúkoly."""
+        n = node.incomplete_subtasks()
+        if n == 0:
+            return True
+        r = QMessageBox.question(
+            self, "Dokončit úkol?",
+            f"Úkol „{node.title}“ má {n} nedokončených podúkolů.\n"
+            "Opravdu ho chceš označit jako hotový?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return r == QMessageBox.StandardButton.Yes
+
     def _on_status_toggled(self, node, status: str) -> None:
+        if status == "done" and not self._confirm_complete(node):
+            # zrušeno – přebuduj z nezměněného stavu (vrátí zaškrtávátko zpět)
+            QTimer.singleShot(0, self._populate)
+            return
         self._snapshot()
         node.set_field("_status", status)
         if self.detail.node is node:

@@ -293,6 +293,11 @@ class TaskNode:
             yield c
             yield from c.iter_descendants()
 
+    def incomplete_subtasks(self) -> int:
+        """Počet nedokončených podúkolů (rekurzivně přes celý podstrom)."""
+        return sum(1 for d in self.iter_descendants()
+                   if d.meta.get("_status") != "done")
+
 
 def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None) -> TaskNode:
     task_dir.mkdir(parents=True, exist_ok=False)

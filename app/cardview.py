@@ -26,12 +26,7 @@ from .tasktree import breadcrumb
 
 def _incomplete_subtasks(node) -> int:
     """Počet nedokončených podúkolů (rekurzivně přes celý podstrom)."""
-    n = 0
-    for child in node.children:
-        if child.meta.get("_status") != "done":
-            n += 1
-        n += _incomplete_subtasks(child)
-    return n
+    return node.incomplete_subtasks()
 
 
 def _props_text(node) -> str:
