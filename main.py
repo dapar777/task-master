@@ -44,11 +44,18 @@ QGroupBox::title {
     padding: 0 4px;
     color: #666;
 }
-QComboBox, QLineEdit, QSpinBox, QTextEdit {
+QLineEdit, QSpinBox, QTextEdit {
     border: 1px solid #cfcfcf;
     border-radius: 4px;
     padding: 2px 4px;
     background: #ffffff;
+}
+/* QComboBox bez explicitního background: jinak „prosákne" do rozbaleného
+   seznamu a vybraná (aktuální) položka je bílá na bílém a není vidět. */
+QComboBox {
+    border: 1px solid #cfcfcf;
+    border-radius: 4px;
+    padding: 2px 4px;
 }
 QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
     border: 1px solid #4f7cff;
