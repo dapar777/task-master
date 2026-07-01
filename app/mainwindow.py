@@ -480,10 +480,15 @@ class MainWindow(QMainWindow):
     # Akce s úkoly
     # ------------------------------------------------------------------
     def _inherit_defaults(self, source) -> dict:
+        """Zdědí od nadřazeného úkolu prioritu, vlaječku a kategorii.
+
+        Z „sekčního" rodiče, jehož název začíná podtržítkem, se nedědí nic.
+        """
         d = {}
-        if source is not None:
+        if source is not None and not source.title.startswith("_"):
             d["priority"] = source.meta.get("_priority", DEFAULT_PRIORITY)
             d["category"] = source.meta.get("_category", "") or ""
+            d["flag"] = bool(source.meta.get("_flag", False))
         return d
 
     def _apply_dialog_meta(self, node, vals: dict) -> None:
