@@ -170,7 +170,7 @@ class CardView(QScrollArea):
 
         for node in nodes:
             card = CardWidget(node)
-            card.setFixedWidth(373)  # všechny obdélníky stejně široké, vlevo
+            card.setFixedWidth(249)  # všechny obdélníky stejně široké, vlevo
             card.selected.connect(self.cardSelected)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
