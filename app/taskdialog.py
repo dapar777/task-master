@@ -110,8 +110,8 @@ class TaskDialog(QDialog):
         QShortcut(QKeySequence("Ctrl+T"), self, activated=self.flag_check.toggle)
         QShortcut(QKeySequence("Ctrl+Up"), self, activated=lambda: self._bump_priority(+1))
         QShortcut(QKeySequence("Ctrl+Down"), self, activated=lambda: self._bump_priority(-1))
-        # zkratka pro rozbalení comboboxu s umístěním
-        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.location_combo.showPopup)
+        # zkratka pro rotaci umístění (další možnost při každém stisku)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self._cycle_location)
 
     def _bump_priority(self, delta: int) -> None:
         i = self.priority_combo.currentIndex()
@@ -119,6 +119,12 @@ class TaskDialog(QDialog):
         self.priority_combo.setCurrentIndex(i)
 
     # ----- výběr umístění -----
+    def _cycle_location(self) -> None:
+        """Ctrl+L: přepne na další možnost umístění (rotuje dokola)."""
+        c = self.location_combo
+        if c.count():
+            c.setCurrentIndex((c.currentIndex() + 1) % c.count())
+
     def _add_tree_item(self, node, parent_item) -> None:
         it = QTreeWidgetItem([node.title])
         it.setData(0, Qt.ItemDataRole.UserRole, node)
