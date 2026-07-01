@@ -7,7 +7,7 @@ Lze přepnout na zobrazení zdrojového markdownu.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -28,6 +28,27 @@ from PySide6.QtWidgets import (
 _HEADING_SCALE = {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.15, 5: 1.05, 6: 1.0}
 
 
+class _BodyTextEdit(QTextEdit):
+    """QTextEdit, který nepohltí klávesové zkratky patřící celému oknu.
+
+    QTextEdit si přes událost ShortcutOverride nárokuje řadu kombinací (např.
+    Ctrl+J = řádkování/LF), takže globální zkratky okna (uložené filtry, přechod
+    na hledání…) při psaní nefungují. Tady takový override uvolníme – ale jen
+    pokud zkratka nekoliduje s vlastní zkratkou editoru (tučné, kurzíva…).
+    """
+
+    def __init__(self, owner: "MarkdownEditor"):
+        super().__init__()
+        self._owner = owner
+
+    def event(self, e):
+        if e.type() == QEvent.Type.ShortcutOverride:
+            if self._owner._release_to_window(e.keyCombination()):
+                e.ignore()
+                return True
+        return super().event(e)
+
+
 class MarkdownEditor(QWidget):
     contentChanged = Signal()
 
@@ -35,8 +56,10 @@ class MarkdownEditor(QWidget):
         super().__init__(parent)
         self._source_mode = False
         self._base_point = 11
+        # zkratky editoru (vyplní _build_toolbar); potřebuje je _release_to_window
+        self.command_actions: dict[str, QAction] = {}
 
-        self.edit = QTextEdit()
+        self.edit = _BodyTextEdit(self)
         self.edit.setAcceptRichText(True)
         doc_font = QFont("Segoe UI", self._base_point)
         self.edit.document().setDefaultFont(doc_font)
@@ -60,7 +83,7 @@ class MarkdownEditor(QWidget):
 
         self._format_actions: list[QAction] = []
         # command_id -> QAction; zkratky přiřazuje ShortcutManager z hlavního okna
-        self.command_actions: dict[str, QAction] = {}
+        # (dict už vznikl v __init__ kvůli _release_to_window)
 
         def add(cid, text, tip, slot, checkable=False):
             act = QAction(text, self)
@@ -97,6 +120,36 @@ class MarkdownEditor(QWidget):
         tb.addSeparator()
         self.source_action = add("view.toggle_source", "MD", "Přepnout na zdrojový markdown", None, checkable=True)
         self.source_action.toggled.connect(self._toggle_source)
+
+    # ------------------------------------------------------------------
+    # Průchodnost globálních zkratek
+    # ------------------------------------------------------------------
+    def _release_to_window(self, combo) -> bool:
+        """Má se klávesa přenechat globální zkratce okna místo editoru?
+
+        Ano, pokud ji používá nějaká akce s kontextem celého okna (WindowShortcut)
+        a přitom nekoliduje s vlastní zkratkou editoru.
+        """
+        seq = QKeySequence(combo)
+        if seq.isEmpty():
+            return False
+        # kolize s vlastní zkratkou editoru -> nechat editoru (uživatelovo pravidlo)
+        for act in self.command_actions.values():
+            s = act.shortcut()
+            if not s.isEmpty() and s == seq:
+                return False
+        win = self.window()
+        if win is None:
+            return False
+        for act in win.findChildren(QAction):
+            if not act.isEnabled():
+                continue
+            if act.shortcutContext() != Qt.ShortcutContext.WindowShortcut:
+                continue
+            s = act.shortcut()
+            if not s.isEmpty() and s == seq:
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Pomocné formátování
