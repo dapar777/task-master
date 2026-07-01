@@ -514,11 +514,11 @@ class MainWindow(QMainWindow):
         cur_id = cur.meta.get("_id") if cur is not None else None
         self.workspace.load()
         nn = self.workspace.node_by_id(new_id)
-        if nn is not None and cur_id:
-            cu = self.workspace.node_by_id(cur_id)
-            if cu is not None and cu.parent is nn.parent:
-                self._place_node(nn, cu, before=False)
+        cu = self.workspace.node_by_id(cur_id) if cur_id else None
         if nn is not None:
+            # při výpočtu zařazení musí být aktuální úkol viditelný (viz _match)
+            self._current_node = cu if cu is not None else nn
+            self._place_new_task(nn, cu)
             self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
         self._populate()
         if nn is not None:
@@ -538,9 +538,15 @@ class MainWindow(QMainWindow):
         child = parent.create_child(vals["title"])
         self._apply_dialog_meta(child, vals)
         new_id = child.meta.get("_id")
+        parent_id = parent.meta.get("_id")
         self.workspace.load()
         nn = self.workspace.node_by_id(new_id)
+        pnode = self.workspace.node_by_id(parent_id)
         if nn is not None:
+            if pnode is not None:
+                # rodič musí být viditelný při výpočtu zařazení (viz _match)
+                self._current_node = pnode
+                self._place_new_subtask(nn, pnode)
             self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
         self._populate()
         if nn is not None:
@@ -961,6 +967,46 @@ class MainWindow(QMainWindow):
         idx = ordered.index(ref)
         insert_at = idx if before else idx + 1
         dragged.set_order(self._order_between(ordered, insert_at))
+
+    # ----- zařazení nově vytvořeného úkolu (podle režimu zobrazení) -----
+    def _visible_ordered(self, exclude=None) -> list:
+        """Ploché zobrazené úkoly (seznam/karty) seřazené podle pořadí."""
+        seq = [n for n in self.workspace.all_nodes()
+               if n is not exclude and self._match(n)]
+        return sort_nodes(seq, "order", False)
+
+    def _place_in_flat(self, node, ref, before: bool) -> None:
+        """Nastaví pořadí uzlu tak, aby v plochém zobrazení stál hned za/před ref."""
+        ordered = self._visible_ordered(exclude=node)
+        if ref not in ordered:
+            node.set_order(self.workspace.next_order())
+            return
+        idx = ordered.index(ref)
+        insert_at = idx if before else idx + 1
+        node.set_order(self._order_between(ordered, insert_at))
+
+    def _place_new_task(self, new_node, cur_node) -> None:
+        """Nový úkol: strom → hned za aktuální (sourozenec); jinak → pod aktuální."""
+        if cur_node is None:
+            return
+        if self._view_mode == "tree":
+            if cur_node.parent is new_node.parent:
+                self._place_node(new_node, cur_node, before=False)
+        else:
+            self._place_in_flat(new_node, cur_node, before=False)
+
+    def _place_new_subtask(self, new_node, parent_node) -> None:
+        """Podúkol: strom → na konec podúkolů (řeší create_child); jinak →
+        za poslední viditelný podúkol, nebo (nejsou-li) hned nad aktuální úkol."""
+        if self._view_mode == "tree":
+            return  # create_child už zařadil na konec přímých podúkolů
+        ordered = self._visible_ordered(exclude=new_node)
+        vis_desc = [n for n in parent_node.iter_descendants() if n in ordered]
+        if vis_desc:
+            last = max(vis_desc, key=ordered.index)
+            self._place_in_flat(new_node, last, before=False)
+        else:
+            self._place_in_flat(new_node, parent_node, before=True)
 
     def _ensure_order_sort(self) -> None:
         if self.filter_panel.current_sort() != ("order", False):

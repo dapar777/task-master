@@ -11,7 +11,9 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
 - 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
 - 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
-- ➕ **Nový úkol** vzniká jako **sourozenec** aktuálního, přes **dialog s metadaty** (i s klávesovými zkratkami `Ctrl+T` / `Ctrl+↑↓`); kategorie a priorita se **dědí** od nadřazeného úkolu.
+- ➕ **Nový úkol** (`Ctrl+N`) vzniká jako **sourozenec** aktuálního, **podúkol** (`Ctrl+Shift+N`) pod aktuálním – přes **dialog s metadaty** (i s klávesovými zkratkami `Ctrl+T` / `Ctrl+↑↓`); kategorie a priorita se **dědí** od nadřazeného úkolu. Zařazení do pořadí respektuje zobrazení:
+  - **strom** – nový úkol hned **za** aktuální; podúkol **na konec** seznamu podúkolů daného úkolu (i těch neviditelných);
+  - **seznam / Bez rušení** – nový úkol **pod** aktuální; podúkol **za poslední** viditelný podúkol daného úkolu, a nejsou-li žádné ve výběru, **hned nad** aktuální úkol.
 - ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. V režimu Bez rušení se **hotové úkoly řadí až za nedokončené**.
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
