@@ -21,7 +21,7 @@ LEGACY_PRIORITY = {"low": 2, "medium": 5, "high": 8, "critical": 10}
 
 # Barevné odlišení stavů (světlé pozadí pro buňky)
 STATUS_COLORS = {
-    "todo": "#e8eaf0",
+    "todo": "#ffffff",
     "in_progress": "#cfe3ff",
     "blocked": "#ffd6d6",
     "done": "#d4f5d4",

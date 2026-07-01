@@ -19,8 +19,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .constants import PRIORITY_COLORS, STATUSES
+from .constants import PRIORITY_COLORS, STATUS_COLORS, STATUSES
 from .tasktree import breadcrumb
+
+
+def _incomplete_subtasks(node) -> int:
+    """Počet nedokončených podúkolů (rekurzivně přes celý podstrom)."""
+    n = 0
+    for child in node.children:
+        if child.meta.get("_status") != "done":
+            n += 1
+        n += _incomplete_subtasks(child)
+    return n
 
 
 def _props_text(node) -> str:
@@ -52,9 +62,14 @@ class CardWidget(QFrame):
         self.node = node
         self.setObjectName("card")
         self.setProperty("selected", False)
-        self._apply_style()
 
-        done = node.meta.get("_status") == "done"
+        status = node.meta.get("_status", "")
+        done = status == "done"
+        # pozadí: vlevo dle stavu, vpravo dle priority (poměr 3:1), přechod gradientem
+        self._status_color = STATUS_COLORS.get(status, "#ffffff")
+        p = node.meta.get("_priority")
+        self._prio_color = PRIORITY_COLORS.get(p, "#eeeeee")
+        self._apply_style()
 
         # zaškrtávátko stavu (hotovo)
         self.check = QCheckBox()
@@ -68,24 +83,31 @@ class CardWidget(QFrame):
         title.setStyleSheet(f"font-size:16px; font-weight:bold; color:{tcolor}; {tdec}")
         title.setWordWrap(True)
 
+        # decentní odznak s počtem nedokončených podúkolů
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(6)
+        title_row.addWidget(title, 1)
+        inc = _incomplete_subtasks(node)
+        if inc:
+            badge = QLabel(f"↳ {inc}")
+            badge.setToolTip(f"{inc} nedokončených podúkolů")
+            badge.setStyleSheet(
+                "background:rgba(255,255,255,0.75); color:#8a5a00; border:1px solid #e0b060;"
+                "border-radius:9px; padding:0px 7px; font-size:11px; font-weight:bold;"
+            )
+            title_row.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
+
         path = QLabel(breadcrumb(node))
-        path.setStyleSheet("color:#888; font-size:11px;")
+        path.setStyleSheet("color:#666; font-size:11px;")
 
         props = QLabel(_props_text(node))
-        # barevný proužek priority
-        p = node.meta.get("_priority")
-        if p in PRIORITY_COLORS:
-            props.setStyleSheet(
-                f"color:#444; font-size:12px; "
-                f"background:{PRIORITY_COLORS[p]}; border-radius:3px; padding:2px 4px;"
-            )
-        else:
-            props.setStyleSheet("color:#444; font-size:12px;")
+        props.setStyleSheet("color:#333; font-size:12px;")
         props.setWordWrap(True)
 
         left = QVBoxLayout()
         left.setSpacing(3)
-        left.addWidget(title)
+        left.addLayout(title_row)
         left.addWidget(path)
         left.addWidget(props)
 
@@ -113,9 +135,15 @@ class CardWidget(QFrame):
         self.statusToggled.emit(self.node, "done" if checked else "todo")
 
     def _apply_style(self) -> None:
+        # vodorovný přechod: stav vlevo (~3/4) -> priorita vpravo (~1/4)
+        grad = (
+            "qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            f"stop:0 {self._status_color}, stop:0.6 {self._status_color}, "
+            f"stop:0.9 {self._prio_color}, stop:1 {self._prio_color})"
+        )
         self.setStyleSheet(
-            "QFrame#card { background:#ffffff; border:1px solid #d4d4d4; border-radius:8px; }"
-            "QFrame#card[selected=\"true\"] { border:2px solid #1a6fd6; background:#f3f8ff; }"
+            f"QFrame#card {{ background:{grad}; border:1px solid #c8c8c8; border-radius:8px; }}"
+            f"QFrame#card[selected=\"true\"] {{ background:{grad}; border:2px solid #1a6fd6; }}"
         )
 
     def set_selected(self, on: bool) -> None:
