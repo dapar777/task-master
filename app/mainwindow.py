@@ -516,25 +516,19 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
         if parent is not None:
             node = parent.create_child(vals["title"])
         else:
             node = self.workspace.create_root(vals["title"])
         self._apply_dialog_meta(node, vals)
-        new_id = node.meta.get("_id")
-        cur_id = cur.meta.get("_id") if cur is not None else None
-        self.workspace.load()
-        nn = self.workspace.node_by_id(new_id)
-        cu = self.workspace.node_by_id(cur_id) if cur_id else None
-        if nn is not None:
-            # při výpočtu zařazení musí být aktuální úkol viditelný (viz _match)
-            self._current_node = cu if cu is not None else nn
-            self._place_new_task(nn, cu)
-            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
+        self.undo.push_created([node.task_id])
+        self.workspace.normalize_orders()  # levné; bez plného načítání z disku
+        # při výpočtu zařazení musí být aktuální úkol viditelný (viz _match)
+        self._current_node = cur if cur is not None else node
+        self._place_new_task(node, cur)
+        self._current_node = node  # aktivní -> zobrazí se i mimo filtr
         self._populate()
-        if nn is not None:
-            self._select_path_in_view(str(nn.path))
+        self._select_path_in_view(str(node.path))
 
     def _new_subtask(self) -> None:
         parent = self._current_node
@@ -552,23 +546,16 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
         child = parent.create_child(vals["title"])
         self._apply_dialog_meta(child, vals)
-        new_id = child.meta.get("_id")
-        parent_id = parent.meta.get("_id")
-        self.workspace.load()
-        nn = self.workspace.node_by_id(new_id)
-        pnode = self.workspace.node_by_id(parent_id)
-        if nn is not None:
-            if pnode is not None:
-                # rodič musí být viditelný při výpočtu zařazení (viz _match)
-                self._current_node = pnode
-                self._place_new_subtask(nn, pnode)
-            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
+        self.undo.push_created([child.task_id])
+        self.workspace.normalize_orders()  # levné; bez plného načítání z disku
+        # rodič musí být viditelný při výpočtu zařazení (viz _match)
+        self._current_node = parent
+        self._place_new_subtask(child, parent)
+        self._current_node = child  # aktivní -> zobrazí se i mimo filtr
         self._populate()
-        if nn is not None:
-            self._select_path_in_view(str(nn.path))
+        self._select_path_in_view(str(child.path))
 
     def _create_under_target(self, target_id: str, vals: dict) -> None:
         """Vytvoří úkol jako podúkol zvoleného cíle (na konec jeho podúkolů)."""
@@ -578,17 +565,13 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
         child = tnode.create_child(vals["title"])
         self._apply_dialog_meta(child, vals)
-        new_id = child.meta.get("_id")
-        self.workspace.load()
-        nn = self.workspace.node_by_id(new_id)
-        if nn is not None:
-            self._current_node = nn  # aktivní -> zobrazí se i mimo filtr
+        self.undo.push_created([child.task_id])
+        self.workspace.normalize_orders()  # levné; bez plného načítání z disku
+        self._current_node = child  # aktivní -> zobrazí se i mimo filtr
         self._populate()
-        if nn is not None:
-            self._select_path_in_view(str(nn.path))
+        self._select_path_in_view(str(child.path))
 
     # ------------------------------------------------------------------
     # Schránka úkolů (copy / cut / paste / vložení z textu)
@@ -807,7 +790,7 @@ class MainWindow(QMainWindow):
             # zrušeno – přebuduj z nezměněného stavu (vrátí zaškrtávátko zpět)
             QTimer.singleShot(0, self._populate)
             return
-        self._snapshot()
+        self.undo.push_fields([(node.task_id, node.meta)])
         node.set_field("_status", status)
         if self.detail.node is node:
             self.detail.sync_status(status)
@@ -1089,7 +1072,8 @@ class MainWindow(QMainWindow):
         # vlož mezi vizuální sousedy (změní jen číslo pořadí, bez přeřazení rodiče)
         ordered_wo = [n for n in ordered if n is not node]
         insert_at = idx - 1 if delta < 0 else idx + 1
-        self._snapshot()
+        # levné undo: _order_between může přečíslovat celou skupinu, ulož ji celou
+        self.undo.push_fields((n.task_id, n.meta) for n in ordered)
         node.set_order(self._order_between(ordered_wo, insert_at))
         self._populate()
         self._select_in_view(node, focus=True)
@@ -1133,7 +1117,7 @@ class MainWindow(QMainWindow):
         new = max(1, min(10, p + delta))
         if new == p:
             return
-        self._snapshot()
+        self.undo.push_fields([(node.task_id, node.meta)])
         node.set_field("_priority", new)
         if self.detail.node is node:
             self.detail.sync_priority(new)
@@ -1157,12 +1141,17 @@ class MainWindow(QMainWindow):
         self.detail.discard()
         self.detail.load(None)
         self._current_node = None
-        if self.undo.restore_last(self.workspace.root):
-            self.workspace.load()
-            self._populate()
-            if sel_path:
-                self._select_path_in_view(sel_path)
-            self.status.showMessage("Vráceno zpět", 1500)
+        kind = self.undo.restore_last(self.workspace)
+        if kind is None:
+            self.status.showMessage("Vrácení selhalo", 1500)
+            return
+        if kind == "snapshot":
+            self.workspace.load()  # disk se změnil vcelku
+        # u „fields"/„created" je paměťový strom už konzistentní
+        self._populate()
+        if sel_path:
+            self._select_path_in_view(sel_path)
+        self.status.showMessage("Vráceno zpět", 1500)
 
     def _toggle_done(self) -> None:
         node = self._current_node
@@ -1175,7 +1164,7 @@ class MainWindow(QMainWindow):
         node = self._current_node
         if node is None:
             return
-        self._snapshot()
+        self.undo.push_fields([(node.task_id, node.meta)])
         state = node.toggle_flag()
         if self.detail.node is node:
             self.detail.sync_flag(state)

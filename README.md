@@ -175,7 +175,7 @@ app/
   filterpanel.py        FilterPanel – sbalený filtr, multi-select, rozmezí priority
   detailpanel.py        TaskDetailPanel – metadata + editor + odkazy
   taskdialog.py         dialog nového úkolu (metadata + zkratky) + volba pozice vkládání
-  undo.py               UndoManager – snapshoty workspace pro Ctrl+Z
+  undo.py               UndoManager – hybridní undo (levné metadatové/created záznamy + snapshot)
   commandpalette.py     CommandPalette – příkazová paleta (Ctrl+Shift+P)
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
   shortcutdialog.py     dialog pro konfiguraci zkratek
