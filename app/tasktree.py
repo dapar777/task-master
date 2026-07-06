@@ -69,7 +69,7 @@ class TaskTreeWidget(QTreeWidget):
         self.setColumnWidth(0, 280)
         self.setColumnWidth(1, 110)
         self.setAlternatingRowColors(True)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setUniformRowHeights(True)
 
         # Drag & drop
@@ -226,6 +226,32 @@ class TaskTreeWidget(QTreeWidget):
             return items[0].data(0, NODE_ROLE)
         return None
 
+    def selected_nodes(self) -> list[TaskNode]:
+        """Všechny označené úkoly (pro hromadné operace)."""
+        out = []
+        for it in self.selectedItems():
+            n = it.data(0, NODE_ROLE)
+            if n is not None:
+                out.append(n)
+        return out
+
+    def select_paths(self, paths, emit: bool = True) -> bool:
+        """Označí více úkolů podle cest; aktuální = první nalezený."""
+        items = [self._find_item_by_path(str(p)) for p in paths]
+        items = [it for it in items if it is not None]
+        if not items:
+            return False
+        self.blockSignals(True)
+        self.clearSelection()
+        # nejdřív aktuální (setCurrentItem výběr přenastaví), pak doplň ostatní
+        self.setCurrentItem(items[0])
+        for it in items:
+            it.setSelected(True)
+        self.blockSignals(False)
+        if emit:
+            self.taskSelected.emit(self.current_node())
+        return True
+
     def _on_selection_changed(self) -> None:
         self.taskSelected.emit(self.current_node())
 
@@ -240,11 +266,15 @@ class TaskTreeWidget(QTreeWidget):
         it = self._find_item_by_path(target_path)
         if it is None:
             return False
-        if silent:
-            self.blockSignals(True)
+        # při ExtendedSelection setCurrentItem položku NEoznačí – musíme sami;
+        # signály blokuj a vyšli jen jednou s finálním stavem (jinak přechodné None)
+        self.blockSignals(True)
+        self.clearSelection()
         self.setCurrentItem(it)
-        if silent:
-            self.blockSignals(False)
+        it.setSelected(True)
+        self.blockSignals(False)
+        if not silent:
+            self.taskSelected.emit(self.current_node())
         return True
 
     def _find_item_by_path(self, path: str):

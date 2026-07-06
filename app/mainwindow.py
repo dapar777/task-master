@@ -412,6 +412,32 @@ class MainWindow(QMainWindow):
         """
         return self.filter_panel.matches(node) or node is self._current_node
 
+    # ------------------------------------------------------------------
+    # Vícenásobný výběr (hromadné operace ve stromu / seznamu)
+    # ------------------------------------------------------------------
+    def _selected_nodes(self) -> list:
+        """Úkoly pro operaci: víc označených jen když je mezi nimi i aktuální.
+
+        Tím se běžný (jednotlivý) výběr chová jako dřív a hromadné operace se
+        spustí jen při skutečném vícevýběru ve stromu/seznamu.
+        """
+        cur = self._current_node
+        if self._view_mode in ("tree", "list"):
+            ns = [n for n in self.tree.selected_nodes() if n is not None]
+            if len(ns) > 1 and cur in ns:
+                return ns
+        return [cur] if cur is not None else []
+
+    def _reselect(self, nodes) -> None:
+        """Po přebudování zobrazení znovu označí dané uzly (jen strom/seznam)."""
+        nodes = [n for n in nodes if n is not None]
+        if not nodes:
+            return
+        if self._view_mode in ("tree", "list") and len(nodes) > 1:
+            self.tree.select_paths([n.path for n in nodes])
+        else:
+            self._select_in_view(nodes[0], focus=True)
+
     def _populate(self) -> None:
         if not self.workspace:
             return
@@ -672,20 +698,39 @@ class MainWindow(QMainWindow):
                 menu.addAction(self.act[cid])
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
+    @staticmethod
+    def _has_selected_ancestor(node, sel) -> bool:
+        p = node.parent
+        while p is not None:
+            if p in sel:
+                return True
+            p = p.parent
+        return False
+
     def _delete_task(self) -> None:
-        node = self._current_node
-        if node is None:
+        nodes = self._selected_nodes()
+        if not nodes:
             return
-        n_children = len(list(node.iter_descendants()))
-        msg = f"Smazat úkol „{node.title}“"
-        if n_children:
-            msg += f" včetně {n_children} podúkolů"
-        msg += "?\n\nSmaže se celá složka z disku."
+        # potomka, jehož předek je také označen, nemazat zvlášť (smaže se s předkem)
+        sel = set(nodes)
+        targets = [n for n in nodes if not self._has_selected_ancestor(n, sel)]
+        if len(targets) == 1:
+            node = targets[0]
+            n_children = len(list(node.iter_descendants()))
+            msg = f"Smazat úkol „{node.title}“"
+            if n_children:
+                msg += f" včetně {n_children} podúkolů"
+            msg += "?\n\nSmaže se celá složka z disku."
+        else:
+            total = sum(1 + len(list(n.iter_descendants())) for n in targets)
+            msg = (f"Smazat {len(targets)} úkolů (celkem {total} položek)?"
+                   "\n\nSmažou se celé složky z disku.")
         if QMessageBox.question(self, "Smazat úkol", msg) != QMessageBox.StandardButton.Yes:
             return
         self.detail.discard()
         self._snapshot()
-        node.delete()
+        for n in targets:
+            n.delete()
         self._current_node = None
         self.detail.load(None)
         self.workspace.load()
@@ -785,15 +830,38 @@ class MainWindow(QMainWindow):
         )
         return r == QMessageBox.StandardButton.Yes
 
+    def _confirm_complete_bulk(self, risky) -> bool:
+        """Potvrzení pro hromadné dokončení úkolů s nedokončenými podúkoly."""
+        if len(risky) == 1:
+            return self._confirm_complete(risky[0])
+        total = sum(n.incomplete_subtasks() for n in risky)
+        r = QMessageBox.question(
+            self, "Dokončit úkoly?",
+            f"{len(risky)} úkolů má nedokončené podúkoly (celkem {total}).\n"
+            "Opravdu je označit jako hotové?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return r == QMessageBox.StandardButton.Yes
+
     def _on_status_toggled(self, node, status: str) -> None:
-        if status == "done" and not self._confirm_complete(node):
-            # zrušeno – přebuduj z nezměněného stavu (vrátí zaškrtávátko zpět)
-            QTimer.singleShot(0, self._populate)
-            return
-        self.undo.push_fields([(node.task_id, node.meta)])
-        node.set_field("_status", status)
-        if self.detail.node is node:
-            self.detail.sync_status(status)
+        # z checkboxu / Ctrl+Enter: když je 'node' součástí vícevýběru, na všechny
+        sel = self._selected_nodes()
+        nodes = sel if (len(sel) > 1 and node in sel) else [node]
+        self._apply_status_to(nodes, status)
+
+    def _apply_status_to(self, nodes, status: str) -> None:
+        if status == "done":
+            risky = [n for n in nodes if n.incomplete_subtasks()]
+            if risky and not self._confirm_complete_bulk(risky):
+                # zrušeno – přebuduj z nezměněného stavu (vrátí zaškrtávátka zpět)
+                QTimer.singleShot(0, self._populate)
+                return
+        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        for n in nodes:
+            n.set_field("_status", status)
+        if self.detail.node in nodes:
+            self.detail.sync_status(self.detail.node.meta.get("_status"))
         going_done = status == "done"
         # přebudování odlož mimo právě probíhající itemChanged signál;
         # po dokončení skoč na první úkol a odroluj nahoru
@@ -1056,6 +1124,10 @@ class MainWindow(QMainWindow):
         if node is None or not self.workspace:
             return
         self._ensure_order_sort()
+        sel = self._selected_nodes()
+        if len(sel) > 1:
+            self._move_selection(sel, delta)
+            return
         # posouváme v rámci aktuálně ZOBRAZENÉ posloupnosti:
         #  - strom: mezi sourozenci, - seznam/karty: v celém plochém seznamu
         if self._view_mode == "tree":
@@ -1077,6 +1149,45 @@ class MainWindow(QMainWindow):
         node.set_order(self._order_between(ordered_wo, insert_at))
         self._populate()
         self._select_in_view(node, focus=True)
+
+    def _move_selection(self, sel_nodes, delta: int) -> None:
+        """Posune blok označených úkolů v pořadí nahoru/dolů (o jednu pozici).
+
+        Ve stromu jen když všechny sdílejí stejného rodiče; v seznamu/kartách
+        v celém plochém seznamu. Zachová relativní pořadí označených.
+        """
+        if self._view_mode == "tree":
+            parents = {n.parent for n in sel_nodes}
+            if len(parents) != 1:
+                self.status.showMessage("Hromadný přesun jde jen mezi sourozenci", 2000)
+                return
+            p = next(iter(parents))
+            seq = sort_nodes(p.children if p else self.workspace.roots, "order", False)
+        else:
+            seq = sort_nodes(
+                [n for n in self.workspace.all_nodes() if self._match(n)], "order", False
+            )
+        selset = set(sel_nodes)
+        if not any(n in selset for n in seq) or len(seq) < 2:
+            return
+        new_seq = list(seq)
+        if delta < 0:
+            for i in range(1, len(new_seq)):
+                if new_seq[i] in selset and new_seq[i - 1] not in selset:
+                    new_seq[i - 1], new_seq[i] = new_seq[i], new_seq[i - 1]
+        else:
+            for i in range(len(new_seq) - 2, -1, -1):
+                if new_seq[i] in selset and new_seq[i + 1] not in selset:
+                    new_seq[i], new_seq[i + 1] = new_seq[i + 1], new_seq[i]
+        if new_seq == seq:
+            return  # na kraji, nic se nezměnilo
+        # levné undo pro celou skupinu; přerozděl stávající pořadová čísla
+        self.undo.push_fields((n.task_id, n.meta) for n in seq)
+        vals = sorted(n.order for n in seq)
+        for n, val in zip(new_seq, vals):
+            n.set_order(val)
+        self._populate()
+        self._reselect(sel_nodes)
 
     def _on_reorder(self, dragged, ref, before: bool) -> None:
         if dragged is None or ref is None or not self.workspace:
@@ -1107,23 +1218,31 @@ class MainWindow(QMainWindow):
         self._select_path_in_view(str(dnode.path))
 
     def _change_priority(self, delta: int) -> None:
-        node = self._current_node
-        if node is None:
+        nodes = self._selected_nodes()
+        if not nodes:
             return
-        try:
-            p = int(node.meta.get("_priority", 5))
-        except (TypeError, ValueError):
-            p = 5
-        new = max(1, min(10, p + delta))
-        if new == p:
+        changed = []
+        for n in nodes:
+            try:
+                p = int(n.meta.get("_priority", 5))
+            except (TypeError, ValueError):
+                p = 5
+            new = max(1, min(10, p + delta))
+            if new != p:
+                changed.append((n, new))
+        if not changed:
             return
-        self.undo.push_fields([(node.task_id, node.meta)])
-        node.set_field("_priority", new)
-        if self.detail.node is node:
-            self.detail.sync_priority(new)
+        self.undo.push_fields([(n.task_id, n.meta) for n, _ in changed])
+        for n, new in changed:
+            n.set_field("_priority", new)
+        if self.detail.node is not None and self.detail.node in nodes:
+            self.detail.sync_priority(self.detail.node.meta.get("_priority"))
         self._populate()
-        self._select_in_view(node, focus=True)
-        self.status.showMessage(f"Priorita: {new}", 1500)
+        self._reselect(nodes)
+        if len(changed) == 1:
+            self.status.showMessage(f"Priorita: {changed[0][1]}", 1500)
+        else:
+            self.status.showMessage(f"Priorita změněna u {len(changed)} úkolů", 1500)
 
     # ------------------------------------------------------------------
     # Undo + přepnutí hotovo
@@ -1157,20 +1276,25 @@ class MainWindow(QMainWindow):
         node = self._current_node
         if node is None:
             return
+        # cíl podle aktuálního uzlu, aplikuj na celý výběr
         new = "todo" if node.meta.get("_status") == "done" else "done"
-        self._on_status_toggled(node, new)
+        self._apply_status_to(self._selected_nodes(), new)
 
     def _toggle_flag(self) -> None:
-        node = self._current_node
-        if node is None:
+        nodes = self._selected_nodes()
+        if not nodes:
             return
-        self.undo.push_fields([(node.task_id, node.meta)])
-        state = node.toggle_flag()
-        if self.detail.node is node:
-            self.detail.sync_flag(state)
+        # když jsou všechny označené s vlaječkou -> vypnout, jinak zapnout
+        target = not all(n.flag for n in nodes)
+        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        for n in nodes:
+            if n.flag != target:
+                n.set_field("_flag", target)
+        if self.detail.node in nodes:
+            self.detail.sync_flag(self.detail.node.flag)
         self._populate()
-        self._select_in_view(node)
-        self.status.showMessage("Vlaječka: " + ("zapnuta" if state else "vypnuta"), 1500)
+        self._reselect(nodes)
+        self.status.showMessage("Vlaječka: " + ("zapnuta" if target else "vypnuta"), 1500)
 
     def _on_sort_changed(self, prev_key, prev_desc, new_key, new_desc) -> None:
         # přepnutí na „vlastní pořadí" z jiného řazení -> přepiš pořadí podle

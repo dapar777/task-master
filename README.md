@@ -16,6 +16,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
   - **seznam / Bez rušení** – nový úkol **pod** aktuální; podúkol **za poslední** viditelný podúkol daného úkolu, a nejsou-li žádné ve výběru, **hned nad** aktuální úkol.
   - **Dědění** – nový úkol zdědí od nadřazeného úkolu **prioritu, vlaječku a kategorii**; z „sekčního" rodiče, jehož **název začíná podtržítkem**, se nedědí nic.
   - **Výběr umístění** – v dialogu je rozbalovací pole *Umístění* (`Ctrl+L`) s **výchozím umístěním** a všemi **top-level úkoly začínajícími podtržítkem**; po rozkliknutí *Vybrat ze stromu* lze zvolit **libovolnou cestu** ve stromu, nahoře s **textovým hledáním**. Zvolený cíl vytvoří úkol jako jeho podúkol.
+- ✅ **Vícenásobný výběr** ve stromu/seznamu (Ctrl+klik, Shift+klik) – hromadné operace nad označenými úkoly: **smazat**, **přepnout hotovo**, **vlaječka** (`Ctrl+T`), **priorita** (`Ctrl+↑/↓`) a **přesun v pořadí** (`Ctrl+W/Q` posune celý blok).
 - ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. V režimu Bez rušení se **hotové úkoly řadí až za nedokončené**. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
