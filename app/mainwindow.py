@@ -426,6 +426,10 @@ class MainWindow(QMainWindow):
             ns = [n for n in self.tree.selected_nodes() if n is not None]
             if len(ns) > 1 and cur in ns:
                 return ns
+        elif self._view_mode == "cards":
+            ns = [n for n in self.card_view.selected_nodes() if n is not None]
+            if len(ns) > 1 and cur in ns:
+                return ns
         return [cur] if cur is not None else []
 
     def _reselect(self, nodes) -> None:
@@ -433,8 +437,10 @@ class MainWindow(QMainWindow):
         nodes = [n for n in nodes if n is not None]
         if not nodes:
             return
-        if self._view_mode in ("tree", "list") and len(nodes) > 1:
+        if len(nodes) > 1 and self._view_mode in ("tree", "list"):
             self.tree.select_paths([n.path for n in nodes])
+        elif len(nodes) > 1 and self._view_mode == "cards":
+            self.card_view.select_paths([str(n.path) for n in nodes])
         else:
             self._select_in_view(nodes[0], focus=True)
 
@@ -794,9 +800,10 @@ class MainWindow(QMainWindow):
         self._schedule_state_save()
 
     def _on_card_selected(self, node) -> None:
+        # výběr (i vícenásobný) si spravuje CardView sám; tady jen aktualizuj
+        # aktuální úkol a detail (nepřenastavuj výběr, ať se nezruší vícevýběr)
         prev = self._current_node
         self._current_node = node
-        self.card_view.select_path(str(node.path))
         self.card_view.setFocus()
         self.detail.load(node)
         self._drop_unpinned(prev, node)

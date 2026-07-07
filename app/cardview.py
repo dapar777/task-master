@@ -49,7 +49,7 @@ def _props_text(node) -> str:
 
 
 class CardWidget(QFrame):
-    selected = Signal(object)
+    selected = Signal(object, object)  # (node, klávesové modifikátory)
     opened = Signal(object)
     statusToggled = Signal(object, str)
 
@@ -153,7 +153,7 @@ class CardWidget(QFrame):
         self.style().polish(self)
 
     def mousePressEvent(self, event):
-        self.selected.emit(self.node)
+        self.selected.emit(self.node, event.modifiers())
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
@@ -180,7 +180,9 @@ class CardView(QScrollArea):
         self.setWidget(self.container)
         self._cards: dict[str, CardWidget] = {}
         self._order: list[str] = []  # cesty v zobrazeném pořadí
-        self._selected_path: str | None = None
+        self._selected: set[str] = set()   # všechny označené cesty
+        self._focus: str | None = None     # aktuální (fokus) karta
+        self._anchor: str | None = None    # kotva pro výběr rozsahu (Shift)
         self._empty = QLabel("Žádné úkoly nevyhovují filtru.")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty.setStyleSheet("color:#999; font-size:14px;")
@@ -201,7 +203,7 @@ class CardView(QScrollArea):
 
         for node in nodes:
             card = CardWidget(node)
-            card.selected.connect(self.cardSelected)
+            card.selected.connect(self._on_card_clicked)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
             self.vbox.addWidget(card)  # roztáhne se na šířku okna
@@ -209,56 +211,120 @@ class CardView(QScrollArea):
             self._cards[key] = card
             self._order.append(key)
         self.vbox.addStretch(1)
-        if self._selected_path in self._cards:
-            self.select_path(self._selected_path)
+        # znovu použij výběr na nově vytvořené karty (zachovaly se jen existující)
+        self._selected = {p for p in self._selected if p in self._cards}
+        if self._focus not in self._cards:
+            self._focus = None
+        self._apply_selection_styles()
+        if self._focus in self._cards:
+            self.ensureWidgetVisible(self._cards[self._focus])
+
+    def _apply_selection_styles(self) -> None:
+        for p, card in self._cards.items():
+            card.set_selected(p in self._selected)
 
     def select_path(self, path: str) -> None:
-        self._selected_path = str(path)
-        for p, card in self._cards.items():
-            card.set_selected(p == self._selected_path)
-        card = self._cards.get(self._selected_path)
+        """Jednotlivý výběr (nahradí případný vícevýběr)."""
+        path = str(path)
+        self._selected = {path} if path in self._cards else set()
+        self._focus = path if path in self._cards else None
+        self._anchor = self._focus
+        self._apply_selection_styles()
+        card = self._cards.get(path)
         if card is not None:
             self.ensureWidgetVisible(card)
 
+    def select_paths(self, paths) -> None:
+        """Vícenásobný výběr; fokus = první existující."""
+        ps = [str(p) for p in paths if str(p) in self._cards]
+        if not ps:
+            return
+        self._selected = set(ps)
+        self._focus = ps[0]
+        self._anchor = ps[0]
+        self._apply_selection_styles()
+        self.ensureWidgetVisible(self._cards[ps[0]])
+        self.cardSelected.emit(self._cards[ps[0]].node)
+
+    def selected_nodes(self) -> list:
+        """Označené úkoly v zobrazeném pořadí (pro hromadné operace)."""
+        return [self._cards[p].node for p in self._order if p in self._selected]
+
     def current_path(self) -> str | None:
-        return self._selected_path
+        return self._focus
 
     def ensure_selection(self) -> None:
         """Pokud nic není vybráno, vyber první kartu (a vyšle signál výběru)."""
-        if self._order and self._selected_path not in self._cards:
+        if self._order and self._focus not in self._cards:
             self._move_selection(0)
 
+    # ----- výběr myší -----
+    def _on_card_clicked(self, node, mods) -> None:
+        path = str(node.path)
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        if ctrl:
+            if path in self._selected:
+                self._selected.discard(path)
+            else:
+                self._selected.add(path)
+            self._focus = path
+            self._anchor = path
+        elif shift and self._anchor in self._order and path in self._order:
+            a, b = self._order.index(self._anchor), self._order.index(path)
+            lo, hi = sorted((a, b))
+            self._selected = set(self._order[lo:hi + 1])
+            self._focus = path
+        else:
+            self._selected = {path}
+            self._focus = path
+            self._anchor = path
+        self._apply_selection_styles()
+        self.cardSelected.emit(node)
+
     # ----- navigace klávesnicí -----
-    def _move_selection(self, delta: int) -> None:
+    def _move_selection(self, delta: int, extend: bool = False) -> None:
         if not self._order:
             return
-        if self._selected_path in self._order:
-            idx = self._order.index(self._selected_path)
+        if self._focus in self._order:
+            idx = self._order.index(self._focus)
             idx = max(0, min(len(self._order) - 1, idx + delta))
         else:
             idx = 0
         path = self._order[idx]
-        self.select_path(path)
+        if extend and self._anchor in self._order:
+            a, b = self._order.index(self._anchor), idx
+            lo, hi = sorted((a, b))
+            self._selected = set(self._order[lo:hi + 1])
+            self._focus = path
+            self._apply_selection_styles()
+            self.ensureWidgetVisible(self._cards[path])
+        else:
+            self.select_path(path)
         card = self._cards.get(path)
         if card is not None:
             self.cardSelected.emit(card.node)
 
     def keyPressEvent(self, event):
         key = event.key()
+        extend = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         if key in (Qt.Key.Key_Down, Qt.Key.Key_Right):
-            self._move_selection(+1)
+            self._move_selection(+1, extend)
         elif key in (Qt.Key.Key_Up, Qt.Key.Key_Left):
-            self._move_selection(-1)
+            self._move_selection(-1, extend)
         elif key in (Qt.Key.Key_Home,):
-            self._move_selection(-len(self._order))
+            self._move_selection(-len(self._order), extend)
         elif key in (Qt.Key.Key_End,):
-            self._move_selection(len(self._order))
+            self._move_selection(len(self._order), extend)
+        elif key == Qt.Key.Key_A and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            self._selected = set(self._order)  # vybrat vše
+            self._apply_selection_styles()
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            card = self._cards.get(self._selected_path)
+            card = self._cards.get(self._focus)
             if card is not None:
                 self.cardOpened.emit(card.node)
         elif key == Qt.Key.Key_Space:
-            card = self._cards.get(self._selected_path)
+            card = self._cards.get(self._focus)
             if card is not None:
                 card.check.toggle()
         else:
