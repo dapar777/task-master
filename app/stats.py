@@ -53,15 +53,19 @@ _DUR_BUCKETS = [
 ]
 
 
-def compute_stats(nodes, days: int = 14, today: date | None = None) -> dict:
+def compute_stats(nodes, days: int = 14, today: date | None = None,
+                  now: datetime | None = None) -> dict:
     """Spočítá statistiky ze seznamu uzlů."""
     nodes = list(nodes)
-    today = today or date.today()
+    now = now or datetime.now()
+    today = today or now.date()
 
     by_status = Counter(n.meta.get("_status", "") for n in nodes)
     created_per_day: Counter = Counter()
     completed_per_day: Counter = Counter()
     durations: list[float] = []  # hodiny do uzavření
+    last_completed = None         # nejnovější čas uzavření
+    last_title = None             # název naposledy uzavřeného úkolu
 
     for n in nodes:
         created = _parse_dt(n.meta.get("_created"))
@@ -70,8 +74,14 @@ def compute_stats(nodes, days: int = 14, today: date | None = None) -> dict:
         completed = _parse_dt(n.meta.get("_completed"))
         if completed:
             completed_per_day[completed.date()] += 1
+            if last_completed is None or completed > last_completed:
+                last_completed = completed
+                last_title = n.title
             if created and completed >= created:
                 durations.append((completed - created).total_seconds() / 3600.0)
+
+    since_last = ((now - last_completed).total_seconds() / 3600.0
+                  if last_completed else None)
 
     day_list = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
     created_series = [created_per_day.get(d, 0) for d in day_list]
@@ -116,6 +126,9 @@ def compute_stats(nodes, days: int = 14, today: date | None = None) -> dict:
         "dur_med": med,
         "dur_min": min(durations) if durations else None,
         "dur_max": max(durations) if durations else None,
+        "since_last": since_last,
+        "last_completed": last_completed,
+        "last_title": last_title,
     }
 
 
@@ -215,6 +228,8 @@ class StatsDialog(QDialog):
         cell(1, 1, "Uzavřené dnes", s["today_completed"], "#2e9e4f")
         cell(1, 2, "Založené 7 dní", s["w_created"], "#4f7cff")
         cell(1, 3, "Uzavřené 7 dní", s["w_completed"], "#2e9e4f")
+        since = _fmt_duration(s["since_last"]) if s["since_last"] is not None else "—"
+        cell(1, 4, "Od posl. uzavření", since, "#7b4fd6")
         layout.addLayout(summ)
 
         layout.addWidget(_hline())
@@ -229,6 +244,17 @@ class StatsDialog(QDialog):
         layout.addWidget(_legend(day_series))
 
         layout.addWidget(_hline())
+
+        # ---- doba od posledního uzavření ----
+        if s["since_last"] is not None:
+            when = s["last_completed"].strftime("%d.%m. %H:%M")
+            title = s["last_title"] or "?"
+            last = QLabel(f"Od posledního uzavření uplynulo <b>{_fmt_duration(s['since_last'])}</b>"
+                          f"  ·  naposledy: „{title}“ ({when})")
+            last.setTextFormat(Qt.TextFormat.RichText)
+            last.setStyleSheet("color:#444; font-size:11px;")
+            last.setWordWrap(True)
+            layout.addWidget(last)
 
         # ---- doba do uzavření ----
         layout.addWidget(_section("Doba do uzavření úkolu"))
