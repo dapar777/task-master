@@ -29,7 +29,8 @@ from .savedfilters import FilterStore, SavedFilter
 from .savedfiltersdialog import SavedFiltersDialog
 from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
-from .storage import Workspace, parse_indented_text, serialize_node
+from .stats import StatsDialog
+from .storage import Workspace, now_iso, parse_indented_text, serialize_node
 from .taskdialog import TaskDialog, ask_paste_position
 from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_nodes
@@ -182,6 +183,7 @@ class MainWindow(QMainWindow):
         self._make("app.refresh", self._reload)
         self._make("app.shortcuts", self._open_shortcuts)
         self._make("app.command_palette", self._open_command_palette)
+        self._make("app.stats", self._open_stats)
         # Filtry
         self._make("filter.save", self._save_current_filter)
         self._make("filter.manage", self._manage_filters)
@@ -263,6 +265,8 @@ class MainWindow(QMainWindow):
                 m_editor.addAction(self.act[cid])
 
         m_settings = mb.addMenu("&Nastavení")
+        m_settings.addAction(self.act["app.stats"])
+        m_settings.addSeparator()
         m_settings.addAction(self.act["app.command_palette"])
         m_settings.addAction(self.act["app.shortcuts"])
 
@@ -315,6 +319,11 @@ class MainWindow(QMainWindow):
             })
         entries.sort(key=lambda e: (e["category"].lower(), e["label"].lower()))
         CommandPalette(entries, self).exec()
+
+    def _open_stats(self) -> None:
+        if not self.workspace:
+            return
+        StatsDialog(list(self.workspace.all_nodes()), self).exec()
 
     # ------------------------------------------------------------------
     # Workspace
@@ -525,6 +534,8 @@ class MainWindow(QMainWindow):
 
     def _apply_dialog_meta(self, node, vals: dict) -> None:
         node.meta["_status"] = vals["status"]
+        if vals["status"] == "done":
+            node.meta.setdefault("_completed", now_iso())
         node.meta["_priority"] = vals["priority"]
         node.meta["_category"] = vals["category"]
         node.meta["_tags"] = vals["tags"]

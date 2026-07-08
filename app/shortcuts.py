@@ -52,6 +52,7 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "view.cards": ("Zobrazení: bez rušení (karty)", "Zobrazení", "Ctrl+Shift+D", "window"),
     "app.shortcuts": ("Klávesové zkratky…", "Aplikace", "Ctrl+,", "window"),
     "app.command_palette": ("Příkazová paleta…", "Aplikace", "Ctrl+Shift+P", "window"),
+    "app.stats": ("Statistiky…", "Aplikace", "F8", "window"),
     # Filtry
     "filter.save": ("Uložit aktuální filtr…", "Filtry", "Ctrl+Shift+S", "window"),
     "filter.manage": ("Spravovat uložené filtry…", "Filtry", "", "window"),

@@ -167,6 +167,12 @@ class TaskNode:
         self.save_meta()
 
     def set_field(self, key: str, value) -> None:
+        # čas uzavření: zaznamenej při přechodu na „done", zruš při zrušení
+        if key == "_status":
+            if value == "done":
+                self.meta.setdefault("_completed", now_iso())
+            else:
+                self.meta.pop("_completed", None)
         self.meta[key] = value
         self.touch()
 
