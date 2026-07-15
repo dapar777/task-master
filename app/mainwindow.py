@@ -31,9 +31,9 @@ from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
 from .stats import StatsDialog
 from .storage import Workspace, now_iso, parse_indented_text, serialize_node
-from .taskdialog import TaskDialog, ask_paste_position
+from .taskdialog import BlockerDialog, TaskDialog, ask_paste_position
 from .undo import UndoManager
-from .tasktree import TaskTreeWidget, breadcrumb, sort_nodes
+from .tasktree import TaskTreeWidget, breadcrumb, sort_flat, sort_nodes
 
 VIEW_MODES = ("tree", "list", "cards")
 
@@ -101,6 +101,7 @@ class MainWindow(QMainWindow):
         # pravý panel
         self.detail = TaskDetailPanel()
         self.detail.metaChanged.connect(self._on_meta_changed)
+        self.detail.statusChanged.connect(self._on_status_meta_changed)
         self.detail.navigateTo.connect(self._navigate_to)
         self.detail.addRefRequested.connect(self._add_ref_dialog)
 
@@ -348,6 +349,8 @@ class MainWindow(QMainWindow):
         self._current_node = None
         self.workspace = Workspace(path)
         self.detail.resolver = self.workspace.node_by_id
+        self.card_view.resolver = self.workspace.node_by_id
+        self.tree.resolver = self.workspace.node_by_id
         roots = self.workspace.load()
         if not roots and create_samples:
             self._create_samples()
@@ -379,11 +382,13 @@ class MainWindow(QMainWindow):
     def _save_state(self) -> None:
         if not self.workspace:
             return
-        state = {
+        # zachovej klíče, které si spravuje někdo jiný (např. _recent_blockers)
+        state = self.workspace.load_state()
+        state.update({
             "_active": self._current_node.meta.get("_id") if self._current_node else None,
             "_view": self._view_mode,
             "_filter": self.filter_panel.export_preset(),
-        }
+        })
         self.workspace.save_state(state)
 
     def _schedule_state_save(self) -> None:
@@ -459,11 +464,7 @@ class MainWindow(QMainWindow):
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)
-            nodes = [n for n in self.workspace.all_nodes() if self._match(n)]
-            nodes = sort_nodes(nodes, sort_key, sort_desc)
-            # v režimu Bez rušení řadíme dokončené úkoly až za nedokončené (stabilně)
-            nodes.sort(key=lambda n: n.meta.get("_status") == "done")
-            self.card_view.populate(nodes)
+            self.card_view.populate(self._flat_sequence())
         else:
             self.stack.setCurrentIndex(0)
             self.tree.populate(
@@ -473,6 +474,21 @@ class MainWindow(QMainWindow):
         self.filter_panel.populate_dynamic(
             self.workspace.all_categories(), self.workspace.all_tags()
         )
+
+    def _flat_sequence(self, exclude=None) -> list:
+        """Přesně to pořadí, v jakém úkoly stojí v plochém pohledu (seznam/karty).
+
+        Jediný zdroj pravdy pro zobrazení i pro přesun v pořadí – kdyby se lišily,
+        klávesová zkratka by úkol vkládala mezi jiné sousedy, než jaké uživatel vidí.
+        """
+        key, desc = self.filter_panel.current_sort()
+        nodes = [n for n in self.workspace.all_nodes()
+                 if n is not exclude and self._match(n)]
+        seq = sort_flat(nodes, key, desc)
+        if self._view_mode == "cards":
+            # Bez rušení: hotové úkoly až za nedokončené (stabilně, bloky zůstanou)
+            seq.sort(key=lambda n: n.meta.get("_status") == "done")
+        return seq
 
     def _on_filter_changed(self) -> None:
         self._populate()
@@ -829,6 +845,20 @@ class MainWindow(QMainWindow):
     def _on_meta_changed(self, node) -> None:
         self._populate()
 
+    def _on_status_meta_changed(self, node, status: str) -> None:
+        """Stav změněný comboboxem v detailu: doptej se / odblokuj čekající."""
+        if status == "blocked":
+            self._ask_blocker(node)
+            return
+        if status == "done":
+            unblocked = self._unblocked_by([node])
+            if unblocked:
+                self.undo.push_fields([(n.task_id, n.meta) for n in unblocked])
+                for n in unblocked:
+                    n.set_field("_status", "todo")
+                self.status.showMessage(f"Odblokováno úkolů: {len(unblocked)}", 3000)
+                self._populate()
+
     def _on_link_dropped(self, node) -> None:
         if self.detail.node is node:
             self.detail.refresh_links_external()
@@ -875,15 +905,77 @@ class MainWindow(QMainWindow):
                 # zrušeno – přebuduj z nezměněného stavu (vrátí zaškrtávátka zpět)
                 QTimer.singleShot(0, self._populate)
                 return
-        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        # úkoly, které se dokončením těchto uzlů odblokují
+        unblocked = self._unblocked_by(nodes) if status == "done" else []
+        self.undo.push_fields(
+            [(n.task_id, n.meta) for n in nodes]
+            + [(n.task_id, n.meta) for n in unblocked]
+        )
         for n in nodes:
             n.set_field("_status", status)
-        if self.detail.node in nodes:
+        for n in unblocked:
+            n.set_field("_status", "todo")  # set_field zruší i _blocked_by
+        if self.detail.node in nodes or self.detail.node in unblocked:
             self.detail.sync_status(self.detail.node.meta.get("_status"))
+        if unblocked:
+            self.status.showMessage(
+                f"Odblokováno úkolů: {len(unblocked)}"
+                + (f" – „{unblocked[0].title}“" if len(unblocked) == 1 else ""),
+                3000,
+            )
         going_done = status == "done"
         # přebudování odlož mimo právě probíhající itemChanged signál;
         # po dokončení skoč na první úkol a odroluj nahoru
         QTimer.singleShot(0, lambda: self._after_status_toggle(going_done))
+        # na blokující úkol se zeptej až po přebudování (dialog nesmí běžet
+        # uprostřed itemChanged signálu ze zaškrtávátka)
+        if status == "blocked" and len(nodes) == 1:
+            QTimer.singleShot(0, lambda n=nodes[0]: self._ask_blocker(n))
+
+    def _unblocked_by(self, nodes) -> list:
+        """Úkoly čekající na některý z `nodes` – dokončením se odblokují."""
+        if not self.workspace:
+            return []
+        done_ids = {n.task_id for n in nodes if n.task_id}
+        return [
+            n for n in self.workspace.all_nodes()
+            if n.blocked_by in done_ids and n not in nodes
+        ]
+
+    def _ask_blocker(self, node) -> None:
+        """Nabídne (nepovinně) výběr úkolu, který tento úkol blokuje."""
+        if not self.workspace or node.meta.get("_status") != "blocked":
+            return
+        recent = [
+            r for r in (self.workspace.node_by_id(i)
+                        for i in self.workspace.recent_blockers())
+            if r is not None and r is not node
+        ]
+        chosen = BlockerDialog.get(
+            self, node, self.workspace.roots, recent, node.blocked_by
+        )
+        if chosen is None:
+            return  # zrušeno – stav „blokováno" zůstává, jen bez vazby
+        target = self.workspace.node_by_id(chosen) if chosen else None
+        # blokovat už hotovým úkolem by úkol nechalo viset navždy (odblokovává
+        # se až při jeho dokončení, které nikdy nepřijde) – rovnou se odblokuje
+        if target is not None and target.meta.get("_status") == "done":
+            self.undo.push_fields([(node.task_id, node.meta)])
+            node.set_field("_status", "todo")
+            self.detail.sync_status("todo")
+            self.status.showMessage(
+                f"„{target.title}“ je hotový – úkol jde rovnou zpracovat", 3000
+            )
+            self._populate()
+            self._select_in_view(node)
+            return
+        node.set_blocked_by(chosen)
+        if chosen:
+            self.workspace.push_recent_blocker(chosen)
+            if target is not None:
+                self.status.showMessage(f"Blokuje: {target.title}", 3000)
+        self._populate()
+        self._select_in_view(node)
 
     def _after_status_toggle(self, going_done: bool) -> None:
         self._populate()
@@ -1095,10 +1187,8 @@ class MainWindow(QMainWindow):
 
     # ----- zařazení nově vytvořeného úkolu (podle režimu zobrazení) -----
     def _visible_ordered(self, exclude=None) -> list:
-        """Ploché zobrazené úkoly (seznam/karty) seřazené podle pořadí."""
-        seq = [n for n in self.workspace.all_nodes()
-               if n is not exclude and self._match(n)]
-        return sort_nodes(seq, "order", False)
+        """Ploché zobrazené úkoly (seznam/karty) v tom pořadí, v jakém je vidět."""
+        return self._flat_sequence(exclude=exclude)
 
     def _place_in_flat(self, node, ref, before: bool) -> None:
         """Nastaví pořadí uzlu tak, aby v plochém zobrazení stál hned za/před ref."""
@@ -1146,25 +1236,93 @@ class MainWindow(QMainWindow):
         if len(sel) > 1:
             self._move_selection(sel, delta)
             return
-        # posouváme v rámci aktuálně ZOBRAZENÉ posloupnosti:
-        #  - strom: mezi sourozenci, - seznam/karty: v celém plochém seznamu
-        if self._view_mode == "tree":
-            seq = node.parent.children if node.parent else self.workspace.roots
-        else:
-            seq = [n for n in self.workspace.all_nodes() if self._match(n)]
-        ordered = sort_nodes(seq, "order", False)
+        # V plochém pohledu NELZE prohodit pořadí s vizuálním sousedem: ten bývá
+        # rodič nebo úkol z cizí větve a jeho pozici drží hierarchie, ne _order
+        # (prohození čísel by pak úkolem vůbec nepohnulo). Posouvej proto vždy
+        # mezi sourozenci – to je jediné, co _order v plochém pohledu řídí.
+        # Mezní stav si řeší _move_flat sám (na okraji skupiny povyšuje).
+        if self._view_mode != "tree":
+            self._move_flat(node, delta)
+            return
+        # strom: posun mezi sourozenci
+        ordered = sort_nodes(
+            node.parent.children if node.parent else self.workspace.roots,
+            "order", False,
+        )
         if node not in ordered or len(ordered) < 2:
             return
         idx = ordered.index(node)
         target = idx + delta
         if target < 0 or target >= len(ordered):
             return
-        # vlož mezi vizuální sousedy (změní jen číslo pořadí, bez přeřazení rodiče)
+        # vlož mezi vizuální sousedy (index do seznamu BEZ posouvaného uzlu):
+        # po odebrání uzlu se indexy za ním posunou o 1 vlevo -> cíl je přímo `target`
         ordered_wo = [n for n in ordered if n is not node]
-        insert_at = idx - 1 if delta < 0 else idx + 1
+        insert_at = target
         # levné undo: _order_between může přečíslovat celou skupinu, ulož ji celou
         self.undo.push_fields((n.task_id, n.meta) for n in ordered)
         node.set_order(self._order_between(ordered_wo, insert_at))
+        self._populate()
+        self._select_in_view(node, focus=True)
+
+    def _visible_siblings(self, node) -> list:
+        """Viditelní sourozenci uzlu v plochém pohledu, seřazení podle pořadí.
+
+        „Sourozenec" = uzel se stejným nejbližším VIDITELNÝM předkem; při
+        odfiltrovaném rodiči se tak sourozenci stanou i uzly z vedlejší větve,
+        které v seznamu skutečně sousedí.
+
+        Skupina se určuje z hierarchie, ne ze zobrazené sekvence – v kartách
+        totiž hotové úkoly padají dolů a skupinu by roztrhly.
+        """
+        present = {n for n in self.workspace.all_nodes() if self._match(n)}
+
+        def vis_parent(n):
+            p = n.parent
+            while p is not None and p not in present:
+                p = p.parent
+            return p
+
+        own = vis_parent(node)
+        sibs = [n for n in present if vis_parent(n) is own]
+        if self._view_mode == "cards":
+            # Bez rušení drží hotové úkoly dole – posouvej jen v rámci té části,
+            # kde úkol právě stojí, ať se neprohodí s někým „přes hranici"
+            done = node.meta.get("_status") == "done"
+            sibs = [n for n in sibs if (n.meta.get("_status") == "done") == done]
+        key, desc = self.filter_panel.current_sort()
+        return sort_nodes(sibs, key, desc)
+
+    def _move_flat(self, node, delta: int) -> None:
+        """Přesun v seznamu/kartách: o jednu pozici mezi viditelnými sourozenci.
+
+        Posouvá se jen v rámci skupiny sourozenců – to je jediné, co vlastní
+        pořadí v plochém pohledu určuje. Na okraji skupiny úkol zůstává: dál by
+        se posunul jen změnou zanoření, a tu nesmí udělat šipka mlčky (od toho
+        je přetažení myší nebo Vyjmout/Vložit).
+        """
+        sibs = self._visible_siblings(node)
+        if node not in sibs or len(sibs) < 2:
+            return
+        idx = sibs.index(node)
+        target = idx + delta
+        if not (0 <= target < len(sibs)):
+            where = "nahoře" if delta < 0 else "dole"
+            parent = node.parent
+            self.status.showMessage(
+                f"Úkol je {where} ve svém bloku"
+                + (f" (pod „{parent.title}“)" if parent is not None else ""),
+                2000,
+            )
+            return
+        other = sibs[target]
+        self.undo.push_fields([(node.task_id, node.meta), (other.task_id, other.meta)])
+        a, b = node.order, other.order
+        if a == b:  # pojistka proti shodným číslům (stará data)
+            self.workspace.normalize_orders()
+            a, b = node.order, other.order
+        node.set_order(b)
+        other.set_order(a)
         self._populate()
         self._select_in_view(node, focus=True)
 
@@ -1182,9 +1340,7 @@ class MainWindow(QMainWindow):
             p = next(iter(parents))
             seq = sort_nodes(p.children if p else self.workspace.roots, "order", False)
         else:
-            seq = sort_nodes(
-                [n for n in self.workspace.all_nodes() if self._match(n)], "order", False
-            )
+            seq = self._flat_sequence()
         selset = set(sel_nodes)
         if not any(n in selset for n in seq) or len(seq) < 2:
             return

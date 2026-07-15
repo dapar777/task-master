@@ -29,9 +29,12 @@ def _incomplete_subtasks(node) -> int:
     return node.incomplete_subtasks()
 
 
-def _props_text(node) -> str:
+def _props_text(node, blocker=None) -> str:
+    status = STATUSES.get(node.meta.get("_status", ""), "?")
+    if node.blocked_by:
+        status += f" ⛔ {blocker.title}" if blocker is not None else " ⛔ (smazaný úkol)"
     parts = [
-        f"Stav: {STATUSES.get(node.meta.get('_status', ''), '?')}",
+        f"Stav: {status}",
         f"Priorita: {node.meta.get('_priority', '?')}",
         f"Pořadí: {node.order}",
     ]
@@ -53,7 +56,7 @@ class CardWidget(QFrame):
     opened = Signal(object)
     statusToggled = Signal(object, str)
 
-    def __init__(self, node, parent=None):
+    def __init__(self, node, parent=None, resolver=None):
         super().__init__(parent)
         self.node = node
         self.setObjectName("card")
@@ -102,7 +105,8 @@ class CardWidget(QFrame):
         path.setStyleSheet("color:#666; font-size:11px;")
         path.setWordWrap(True)  # ať nediktuje minimální šířku karty
 
-        props = QLabel(_props_text(node))
+        blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
+        props = QLabel(_props_text(node, blocker))
         props.setStyleSheet("color:#333; font-size:12px;")
         props.setWordWrap(True)
 
@@ -183,6 +187,7 @@ class CardView(QScrollArea):
         self._selected: set[str] = set()   # všechny označené cesty
         self._focus: str | None = None     # aktuální (fokus) karta
         self._anchor: str | None = None    # kotva pro výběr rozsahu (Shift)
+        self.resolver = None               # id -> TaskNode (nastaví hlavní okno)
         self._empty = QLabel("Žádné úkoly nevyhovují filtru.")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty.setStyleSheet("color:#999; font-size:14px;")
@@ -202,7 +207,7 @@ class CardView(QScrollArea):
             return
 
         for node in nodes:
-            card = CardWidget(node)
+            card = CardWidget(node, resolver=self.resolver)
             card.selected.connect(self._on_card_clicked)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)

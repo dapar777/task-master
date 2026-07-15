@@ -6,6 +6,7 @@ import colorsys
 STATUSES = {
     "todo": "Ke zpracování",
     "in_progress": "Probíhá",
+    "waiting": "Čeká",
     "blocked": "Blokováno",
     "done": "Hotovo",
 }
@@ -23,6 +24,7 @@ LEGACY_PRIORITY = {"low": 2, "medium": 5, "high": 8, "critical": 10}
 STATUS_COLORS = {
     "todo": "#ffffff",
     "in_progress": "#cfe3ff",
+    "waiting": "#ffe9c7",
     "blocked": "#ffd6d6",
     "done": "#d4f5d4",
 }

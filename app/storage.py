@@ -58,6 +58,7 @@ def default_meta(title: str) -> dict:
         "_flag": False,
         "_links": [],
         "_refs": [],
+        "_blocked_by": "",
     }
 
 
@@ -173,7 +174,22 @@ class TaskNode:
                 self.meta.setdefault("_completed", now_iso())
             else:
                 self.meta.pop("_completed", None)
+            # vazba na blokující úkol dává smysl jen ve stavu „blocked"
+            if value != "blocked":
+                self.meta["_blocked_by"] = ""
         self.meta[key] = value
+        self.touch()
+
+    # ----- blokující úkol -----
+    @property
+    def blocked_by(self) -> str:
+        """_id úkolu, který tento úkol blokuje ("" = žádný)."""
+        if self.meta.get("_status") != "blocked":
+            return ""
+        return str(self.meta.get("_blocked_by", "") or "")
+
+    def set_blocked_by(self, target_id: str) -> None:
+        self.meta["_blocked_by"] = str(target_id or "")
         self.touch()
 
     def set_order(self, value: float) -> None:
@@ -447,6 +463,31 @@ class Workspace:
             if n.meta.get("_id") == task_id:
                 return n
         return None
+
+    # ----- blokování -----
+    def blocked_by_node(self, node: "TaskNode") -> list["TaskNode"]:
+        """Úkoly, které blokuje daný úkol (a čekají na jeho dokončení)."""
+        tid = node.task_id
+        if not tid:
+            return []
+        return [n for n in self.all_nodes() if n.blocked_by == tid]
+
+    def recent_blockers(self, limit: int = 10) -> list[str]:
+        """_id naposledy použitých blokujících úkolů (nejnovější první)."""
+        hist = self.load_state().get("_recent_blockers", []) or []
+        return [str(i) for i in hist][:limit]
+
+    def push_recent_blocker(self, task_id: str, limit: int = 10) -> None:
+        """Zapamatuje si blokující úkol pro rychlou nabídku příště."""
+        if not task_id:
+            return
+        state = self.load_state()
+        hist = [str(i) for i in (state.get("_recent_blockers", []) or [])]
+        if task_id in hist:
+            hist.remove(task_id)
+        hist.insert(0, task_id)
+        state["_recent_blockers"] = hist[:limit]
+        self.save_state(state)
 
     # ----- uložený stav UI (do rootu workspace) -----
     @property

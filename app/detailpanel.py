@@ -69,6 +69,7 @@ class LinkList(QListWidget):
 
 class TaskDetailPanel(QWidget):
     metaChanged = Signal(object)   # TaskNode (titulek/stav/... se změnil)
+    statusChanged = Signal(object, str)  # (TaskNode, nový stav) – změna z comboboxu
     navigateTo = Signal(object)    # TaskNode – přejít na související úkol
     addRefRequested = Signal()     # uživatel chce přidat odkaz na úkol
 
@@ -281,7 +282,9 @@ class TaskDetailPanel(QWidget):
                 self._select_data(self.status_combo, self.node.meta.get("_status"))
                 self._loading = False
                 return
+        node = self.node
         self._apply_field("_status", value)
+        self.statusChanged.emit(node, value)
 
     def _confirm_complete(self, count: int) -> bool:
         r = QMessageBox.question(

@@ -44,6 +44,39 @@ def sort_nodes(nodes, key: str, desc: bool = False):
     return sorted(nodes, key=lambda n: _sort_value(n, key), reverse=desc)
 
 
+def sort_flat(nodes, key: str, desc: bool = False):
+    """Ploché (seznam/karty) řazení: podúkoly stojí NAD svým nadřazeným úkolem.
+
+    Každý úkol si drží blok se svými podúkoly; hlouběji vnořené jsou výš.
+    Uvnitř každé skupiny sourozenců (i mezi kořeny) platí zvolené řazení.
+    Rodič, který sám není v `nodes` (odfiltrovaný), blok netvoří – jeho
+    viditelné podúkoly se zařadí na úroveň nejbližšího viditelného předka.
+    """
+    present = set(nodes)
+
+    def visible_parent(n):
+        p = n.parent
+        while p is not None and p not in present:
+            p = p.parent
+        return p
+
+    # děti seskupené podle nejbližšího VIDITELNÉHO předka (None = kořenová úroveň)
+    groups: dict = {}
+    for n in nodes:
+        groups.setdefault(visible_parent(n), []).append(n)
+
+    out = []
+
+    def emit(node) -> None:
+        for child in sort_nodes(groups.get(node, []), key, desc):
+            emit(child)          # podúkoly (a jejich podúkoly) nejdřív
+        out.append(node)         # rodič až za nimi
+
+    for root in sort_nodes(groups.get(None, []), key, desc):
+        emit(root)
+    return out
+
+
 def breadcrumb(node: TaskNode) -> str:
     parts = []
     n = node
@@ -64,6 +97,7 @@ class TaskTreeWidget(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tree_mode = True
+        self.resolver = None  # id -> TaskNode (nastaví hlavní okno)
         self.setColumnCount(3)
         self.setHeaderLabels(["Úkol", "Stav", "Priorita"])
         self.setColumnWidth(0, 280)
@@ -134,7 +168,7 @@ class TaskTreeWidget(QTreeWidget):
             self.expandAll()
         else:
             nodes = [n for n in self._iter_all(roots) if match_fn(n)]
-            for node in self._sorted(nodes):
+            for node in sort_flat(nodes, sort_key, sort_desc):
                 self.addTopLevelItem(self._make_item(node, label=breadcrumb(node)))
         self.blockSignals(False)
         if selected is not None:
@@ -172,7 +206,10 @@ class TaskTreeWidget(QTreeWidget):
             text = "🚩 " + text
         status = node.meta.get("_status", "")
         priority = node.meta.get("_priority", "")
-        item.setText(1, STATUSES.get(status, str(status)))
+        status_text = STATUSES.get(status, str(status))
+        if node.blocked_by:
+            status_text += " ⛔"
+        item.setText(1, status_text)
         item.setText(2, str(PRIORITIES.get(priority, priority)))
         if status in STATUS_COLORS:
             item.setBackground(1, QBrush(QColor(STATUS_COLORS[status])))
@@ -193,6 +230,9 @@ class TaskTreeWidget(QTreeWidget):
         n_links = len(node.links)
         n_refs = len(node.refs)
         tip = node.path.as_posix()
+        if node.blocked_by:
+            blocker = self.resolver(node.blocked_by) if self.resolver else None
+            tip += "\nblokuje: " + (blocker.title if blocker else "(smazaný úkol)")
         if n_links:
             text += f"  📎{n_links}"
             tip += f"\nsouborů: {n_links}"

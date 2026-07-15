@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QToolButton,
@@ -213,6 +214,158 @@ class TaskDialog(QDialog):
             vals = dlg.values()
             if vals["title"]:
                 return vals
+        return None
+
+
+class BlockerDialog(QDialog):
+    """Volba úkolu, který blokuje aktuální úkol (nepovinná).
+
+    Nahoře combobox naposledy použitých blokujících úkolů, pod ním
+    rozklikávací strom všech úkolů s hledáním.
+    """
+
+    def __init__(self, node, roots, recent, current_id="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Blokující úkol")
+        self.setMinimumWidth(420)
+        self._roots = roots or []
+        self._temp_idx = None
+
+        info = QLabel(f"Co blokuje úkol „{node.title}“?\nVýběr je nepovinný.")
+        info.setStyleSheet("color:#555;")
+
+        # combobox: žádný + naposledy použité blokující úkoly
+        self.blocker_combo = QComboBox()
+        self.blocker_combo.addItem("— nic konkrétního —", "")
+        for n in recent:
+            self.blocker_combo.addItem(f"↺ {breadcrumb(n)}", n.task_id)
+
+        form = QFormLayout()
+        form.addRow("Blokuje mě:", self.blocker_combo)
+
+        # rozklikávací strom všech úkolů
+        self.tree_toggle = QToolButton()
+        self.tree_toggle.setText("Vybrat ze stromu ▸")
+        self.tree_toggle.setCheckable(True)
+        self.tree_toggle.setAutoRaise(True)
+        self.tree_toggle.toggled.connect(self._toggle_tree)
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("hledat v úkolech…")
+        self.search.textChanged.connect(self._filter_tree)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setMaximumHeight(240)
+        for r in self._roots:
+            self._add_tree_item(r, None, skip=node)
+        self.tree.itemSelectionChanged.connect(self._on_tree_pick)
+
+        self.tree_box = QWidget()
+        tv = QVBoxLayout(self.tree_box)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.addWidget(self.search)
+        tv.addWidget(self.tree)
+        self.tree_box.setVisible(False)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Uložit")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Zrušit")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(info)
+        layout.addLayout(form)
+        layout.addWidget(self.tree_toggle)
+        layout.addWidget(self.tree_box)
+        layout.addWidget(buttons)
+
+        if current_id:
+            i = self.blocker_combo.findData(current_id)
+            if i >= 0:
+                self.blocker_combo.setCurrentIndex(i)
+        self.blocker_combo.setFocus()
+
+    def _add_tree_item(self, node, parent_item, skip=None) -> None:
+        # úkol nemůže blokovat sám sebe – vynech JEN jeho, ne celý podstrom
+        # (jeho podúkoly klidně blokovat mohou, proto se přivěsí o úroveň výš)
+        if node is skip:
+            for c in node.children:
+                self._add_tree_item(c, parent_item, skip=skip)
+            return
+        done = node.meta.get("_status") == "done"
+        it = QTreeWidgetItem([node.title + ("  (hotovo)" if done else "")])
+        it.setData(0, Qt.ItemDataRole.UserRole, node)
+        if done:
+            # hotový úkol blokovat může, ale nedává to smysl – zbytek jde vybrat
+            it.setForeground(0, Qt.GlobalColor.gray)
+            it.setToolTip(0, "Úkol je hotový – blokovat jím nedává smysl")
+        if parent_item is None:
+            self.tree.addTopLevelItem(it)
+        else:
+            parent_item.addChild(it)
+        for c in node.children:
+            self._add_tree_item(c, it, skip=skip)
+
+    def _toggle_tree(self, on: bool) -> None:
+        self.tree_toggle.setText("Vybrat ze stromu ▾" if on else "Vybrat ze stromu ▸")
+        self.tree_box.setVisible(on)
+        if on:
+            self.tree.expandAll()  # ať jsou vidět i vnořené úkoly
+            self.search.setFocus()
+        self.adjustSize()
+
+    def _on_tree_pick(self) -> None:
+        items = self.tree.selectedItems()
+        if not items:
+            return
+        node = items[0].data(0, Qt.ItemDataRole.UserRole)
+        if node is None:
+            return
+        tid = node.task_id
+        if self._temp_idx is not None:
+            self.blocker_combo.removeItem(self._temp_idx)
+            self._temp_idx = None
+        idx = self.blocker_combo.findData(tid)
+        if idx < 0:
+            self.blocker_combo.addItem("↳ " + breadcrumb(node), tid)
+            idx = self.blocker_combo.count() - 1
+            self._temp_idx = idx
+        self.blocker_combo.setCurrentIndex(idx)
+
+    def _filter_tree(self, text: str) -> None:
+        q = text.strip().lower()
+
+        def visit(item) -> bool:
+            match = q in item.text(0).lower()
+            child_vis = False
+            for i in range(item.childCount()):
+                child_vis = visit(item.child(i)) or child_vis
+            visible = (not q) or match or child_vis
+            item.setHidden(not visible)
+            if q and child_vis:
+                item.setExpanded(True)
+            return visible
+
+        for i in range(self.tree.topLevelItemCount()):
+            visit(self.tree.topLevelItem(i))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        par = self.parent()
+        if par is not None:
+            geo = par.window().frameGeometry()
+            self.move(geo.center().x() - self.width() // 2,
+                      geo.center().y() - self.height() // 2)
+
+    @staticmethod
+    def get(parent, node, roots, recent, current_id="") -> str | None:
+        """Vrátí _id blokujícího úkolu ("" = žádný), None = zrušeno."""
+        dlg = BlockerDialog(node, roots, recent, current_id, parent)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            return dlg.blocker_combo.currentData() or ""
         return None
 
 
