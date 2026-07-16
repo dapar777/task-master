@@ -692,12 +692,16 @@ class MainWindow(QMainWindow):
         self._snapshot()
         new = self.workspace.create_subtree(target, self._clip["data"])
         new_id = new.meta.get("_id")
-        if self._clip["mode"] == "cut":
+        was_cut = self._clip["mode"] == "cut"
+        if was_cut:
             src = self.workspace.node_by_id(self._clip["src_id"])
             if src is not None:
                 src.delete()
             self._clip = None  # vyjmutí je jednorázové
         self.workspace.load()
+        # vyjmutí mění _id → úkoly blokované přesunutým osiřely, odblokuj je
+        if was_cut:
+            self.workspace.resolve_orphan_blocks()
         nn = self.workspace.node_by_id(new_id)
         if nn is not None:
             self._current_node = nn
@@ -796,7 +800,13 @@ class MainWindow(QMainWindow):
         self._current_node = None
         self.detail.load(None)
         self.workspace.load()
+        # úkoly blokované smazanými osiřely – odblokuj je (jinak uvíznou navždy)
+        orphaned = self.workspace.resolve_orphan_blocks()
         self._populate()
+        if orphaned:
+            self.status.showMessage(
+                f"Odblokováno úkolů po smazání: {len(orphaned)}", 3000
+            )
 
     def _rename_dir(self) -> None:
         node = self._current_node

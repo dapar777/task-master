@@ -17,12 +17,17 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
   - **Dědění** – nový úkol zdědí od nadřazeného úkolu **prioritu, vlaječku a kategorii**; z „sekčního" rodiče, jehož **název začíná podtržítkem**, se nedědí nic.
   - **Výběr umístění** – v dialogu je rozbalovací pole *Umístění* (`Ctrl+L`) s **výchozím umístěním** a všemi **top-level úkoly začínajícími podtržítkem**; po rozkliknutí *Vybrat ze stromu* lze zvolit **libovolnou cestu** ve stromu, nahoře s **textovým hledáním**. Zvolený cíl vytvoří úkol jako jeho podúkol.
 - ✅ **Vícenásobný výběr** ve stromu, seznamu i v režimu **Bez rušení** (Ctrl+klik, Shift+klik, v kartách i `Ctrl+A` / Shift+šipky) – hromadné operace nad označenými úkoly: **smazat**, **přepnout hotovo**, **vlaječka** (`Ctrl+T`), **priorita** (`Ctrl+↑/↓`) a **přesun v pořadí** (`Ctrl+W/Q` posune celý blok).
-- ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. V režimu Bez rušení se **hotové úkoly řadí až za nedokončené**. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
+- ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
+- 🏷 **Stavy úkolu**: *Ke zpracování*, *Probíhá*, *Čeká* (na vnější věc), *Blokováno*, *Hotovo* – barevně odlišené.
+- ⛔ **Blokující úkol** – při přechodu na *Blokováno* lze (nepovinně) zadat úkol, který tě blokuje: v dialogu je **kombobox naposledy použitých** blokujících a **rozklikávací strom** s hledáním. Po **dokončení blokujícího** úkolu přejdou všechny jím blokované na *Ke zpracování*. Osiřelou vazbu (blokující úkol smazán / přesunut) aplikace uklidí sama.
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
 - 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
 - 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí.
 - 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (karty přes celou šířku okna, výška se přizpůsobí zalomenému názvu; po najetí na kartu se v plovoucím okénku ukáže text úkolu). Po dokončení úkolu skočí výběr na první úkol a odroluje nahoru. Pozadí karty je **obarvené podle stavu vlevo a priority vpravo** (plynulý přechod, poměr 3:1); úkol s nedokončenými podúkoly nese decentní odznak `↳ N`.
+- 🧩 **Podúkoly nad rodičem** – v **seznamu i Bez rušení** stojí podúkoly nad svým nadřazeným úkolem; každý rodič si drží souvislý blok, hlouběji vnořené jsou výš.
+- 📇 **Skupiny podle stavu v Bez rušení** – karty se řadí do pevného pořadí skupin: **Probíhá + Ke zpracování → Čeká → Blokováno → Hotovo**. Přesun v pořadí (`Ctrl+W/Q`) se pohybuje **jen v rámci skupiny**.
+- 📉 **Úsporné zobrazení karet** (`Ctrl+Shift+E`, menu *Zobrazení*, **defaultně zapnuto**) – karty mimo skupinu *Probíhá + Ke zpracování* jsou **nižší** (jen název a cesta, bez řádku vlastností).
 - 📐 **Responsivní layout** – úzké/vysoké okno přesune editor pod seznam úkolů.
 - 🔢 **Priorita 1–10** (10 = nejvyšší, barevně od zelené po červenou), změna z klávesnice (`Ctrl+↑` / `Ctrl+↓`).
 - ↕️ **Vlastní pořadí** – přesun (`Ctrl+W` / `Ctrl+Q`) i tažením; pořadí je `float` (vždy lze vložit mezi). Při přepnutí na „Vlastní pořadí" se převezme aktuální uspořádání.
@@ -54,7 +59,7 @@ Všechny systémové klíče začínají podtržítkem:
 ```yaml
 _id: 0f4c…              # unikátní ID
 _title: Task 1          # zobrazovaný název
-_status: todo           # todo | in_progress | blocked | done
+_status: todo           # todo | in_progress | waiting | blocked | done
 _priority: 5            # 1–10 (10 = nejvyšší)
 _category: Práce
 _tags: [důležité, projekt]
@@ -62,6 +67,7 @@ _created: 2026-06-24T14:00:00
 _modified: 2026-06-24T14:05:00
 _order: 0               # vlastní pořadí (float, globálně jedinečné)
 _flag: false            # vlaječka (Ctrl+T)
+_blocked_by: ''         # _id blokujícího úkolu (jen ve stavu blocked)
 _links:                 # přetažené soubory jako odkazy (necopírují se)
   - name: smlouva.pdf
     path: C:/Users/.../smlouva.pdf
@@ -103,6 +109,7 @@ přes **klávesové zkratky** a v **příkazové paletě** (`Ctrl+Shift+P`). Ž�
 | Přesunout úkol pod jiný | přetáhni úkol **na** cílový úkol (vnoření) |
 | Změnit pořadí | přetáhni úkol **mezi** dva úkoly, nebo `Ctrl+W`/`Ctrl+Q` |
 | Zobrazení strom/seznam/karty | `Ctrl+L` (cyklit) nebo menu *Zobrazení* |
+| Úsporné karty (Bez rušení) | `Ctrl+Shift+E` nebo menu *Zobrazení* (nižší karty mimo Probíhá/Ke zpracování) |
 | Filtr | combo uloženého filtru; *Kritéria ▸* rozbalí podmínky |
 | Uložit / spravovat filtr | menu *Filtry* (`Ctrl+Shift+S` uložit) |
 | Uložit / obnovit | `Ctrl+S` (autosave těla) / `F5` |
@@ -128,6 +135,7 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+O` | Otevřít prostor | kdekoli |
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
 | `Ctrl+Shift+D` | Režim Bez rušení (karty) | kdekoli |
+| `Ctrl+Shift+E` | Úsporné karty (nižší mimo Probíhá/Ke zpracování) | kdekoli |
 | `Ctrl+W` / `Ctrl+Q` | Posunout úkol v pořadí nahoru / dolů | fokus na stromu nebo kartách |
 | `Ctrl+↑` / `Ctrl+↓` | Zvýšit / snížit prioritu | fokus na stromu nebo kartách |
 | `Ctrl+T` | Přepnout vlaječku 🚩 | kdekoli |

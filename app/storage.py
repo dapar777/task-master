@@ -338,8 +338,12 @@ def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None) ->
 
 
 def serialize_node(node: "TaskNode") -> dict:
-    """Zserializuje úkol (vč. podúkolů) pro kopírování – bez id a časů."""
-    skip = {"_id", "_created", "_modified", "_order"}
+    """Zserializuje úkol (vč. podúkolů) pro kopírování – bez id a časů.
+
+    _blocked_by se nepřenáší: kopie by jinak skrytě zdědila blokující vazbu,
+    kterou uživatel u ní nezadal (a odkazovala by na cizí úkol).
+    """
+    skip = {"_id", "_created", "_modified", "_order", "_blocked_by"}
     return {
         "title": node.title,
         "meta": {k: v for k, v in node.meta.items() if k not in skip},
@@ -471,6 +475,23 @@ class Workspace:
         if not tid:
             return []
         return [n for n in self.all_nodes() if n.blocked_by == tid]
+
+    def resolve_orphan_blocks(self) -> list["TaskNode"]:
+        """Odblokuje úkoly, jejichž blokující úkol už neexistuje.
+
+        Blokující úkol mohl zmizet smazáním nebo přesunem (cut/paste mění _id).
+        Bez úklidu by takový úkol uvázl ve stavu Blokováno navždy – odblokování
+        se totiž spouští jen při dokončení blokujícího, které už nenastane.
+        Vrací odblokované úkoly (pro hlášku). Volat po workspace.load().
+        """
+        ids = {n.task_id for n in self.all_nodes() if n.task_id}
+        fixed = []
+        for n in self.all_nodes():
+            bid = n.blocked_by
+            if bid and bid not in ids:
+                n.set_field("_status", "todo")  # set_field zruší i _blocked_by
+                fixed.append(n)
+        return fixed
 
     def recent_blockers(self, limit: int = 10) -> list[str]:
         """_id naposledy použitých blokujících úkolů (nejnovější první)."""
