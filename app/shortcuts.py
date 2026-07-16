@@ -50,6 +50,7 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "view.tree": ("Zobrazení: strom", "Zobrazení", "", "window"),
     "view.list": ("Zobrazení: seznam", "Zobrazení", "", "window"),
     "view.cards": ("Zobrazení: bez rušení (karty)", "Zobrazení", "Ctrl+Shift+D", "window"),
+    "view.compact_cards": ("Úsporné karty (nižší mimo Probíhá/Ke zpracování)", "Zobrazení", "Ctrl+Shift+E", "window"),
     "app.shortcuts": ("Klávesové zkratky…", "Aplikace", "Ctrl+,", "window"),
     "app.command_palette": ("Příkazová paleta…", "Aplikace", "Ctrl+Shift+P", "window"),
     "app.stats": ("Statistiky…", "Aplikace", "F8", "window"),

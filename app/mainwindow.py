@@ -22,7 +22,13 @@ from PySide6.QtWidgets import (
 
 from .cardview import CardView
 from .commandpalette import CommandPalette
-from .constants import APP_NAME, DEFAULT_PRIORITY, ORG_NAME
+from .constants import (
+    APP_NAME,
+    DEFAULT_PRIORITY,
+    ORG_NAME,
+    STATUS_GROUP_INDEX,
+    STATUS_GROUPS,
+)
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
 from .savedfilters import FilterStore, SavedFilter
@@ -50,6 +56,9 @@ class MainWindow(QMainWindow):
         if self._view_mode not in VIEW_MODES:
             self._view_mode = "tree"
         self._current_node = None
+        # úsporné zobrazení karet (Bez rušení): úkoly mimo Probíhá+Ke zpracování
+        # jsou nižší. Defaultně zapnuto.
+        self._compact_cards = self.settings.value("compact_cards", True, type=bool)
         self._clip = None  # schránka úkolu: {"mode": "copy"|"cut", "data": ..., "src_id": ...}
         self.undo = UndoManager()
         self.act: dict[str, QAction] = {}
@@ -202,6 +211,9 @@ class MainWindow(QMainWindow):
             self.act_view[mode] = a
         self.act_view[self._view_mode].setChecked(True)
         self._make("view.cycle", self._cycle_view)
+        # úsporné karty – přepínatelná akce (zkratka + klikátko v menu)
+        ac = self._make("view.compact_cards", self._toggle_compact_cards, checkable=True)
+        ac.setChecked(self._compact_cards)
         # Navigace / fokus
         self._make("focus.filter", self._focus_filter)
         self._make("focus.tree", self._focus_tree)
@@ -246,6 +258,7 @@ class MainWindow(QMainWindow):
         for cid in ("view.tree", "view.list", "view.cards"):
             m_view.addAction(self.act[cid])
         m_view.addAction(self.act["view.cycle"])
+        m_view.addAction(self.act["view.compact_cards"])
         m_view.addSeparator()
         for cid in ("focus.filter", "focus.tree", "focus.editor", "focus.title", "focus.links"):
             m_view.addAction(self.act[cid])
@@ -464,7 +477,10 @@ class MainWindow(QMainWindow):
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)
-            self.card_view.populate(self._flat_sequence())
+            self.card_view.populate(
+                self._flat_sequence(),
+                compact_fn=self._is_compact_card if self._compact_cards else None,
+            )
         else:
             self.stack.setCurrentIndex(0)
             self.tree.populate(
@@ -486,9 +502,22 @@ class MainWindow(QMainWindow):
                  if n is not exclude and self._match(n)]
         seq = sort_flat(nodes, key, desc)
         if self._view_mode == "cards":
-            # Bez rušení: hotové úkoly až za nedokončené (stabilně, bloky zůstanou)
-            seq.sort(key=lambda n: n.meta.get("_status") == "done")
+            # Bez rušení: seskup podle stavu do pevného pořadí skupin
+            # (Probíhá+Ke zpracování → Čeká → Blokováno → Hotovo). Uvnitř skupiny
+            # zůstane řazení z sort_flat (podúkol nad rodičem, blok pohromadě).
+            seq.sort(key=self._group_index)
         return seq
+
+    @staticmethod
+    def _group_index(node) -> int:
+        return STATUS_GROUP_INDEX.get(
+            node.meta.get("_status", ""), len(STATUS_GROUPS)
+        )
+
+    @staticmethod
+    def _is_compact_card(node) -> bool:
+        """Úsporná (nižší) karta: vše mimo skupinu Probíhá+Ke zpracování."""
+        return MainWindow._group_index(node) != 0
 
     def _on_filter_changed(self) -> None:
         self._populate()
@@ -1131,6 +1160,18 @@ class MainWindow(QMainWindow):
         idx = VIEW_MODES.index(self._view_mode)
         self._set_view_mode(VIEW_MODES[(idx + 1) % len(VIEW_MODES)])
 
+    def _toggle_compact_cards(self, checked: bool) -> None:
+        self._compact_cards = bool(checked)
+        self.settings.setValue("compact_cards", self._compact_cards)
+        # zachovej výběr při přebudování karet
+        cur = self._current_node
+        self._populate()
+        if cur is not None:
+            self._select_in_view(cur)
+        self.status.showMessage(
+            "Úsporné karty: " + ("zapnuto" if checked else "vypnuto"), 1500
+        )
+
     def _select_in_view(self, node, focus: bool = False) -> None:
         path = str(node.path)
         if self._view_mode == "cards":
@@ -1286,10 +1327,10 @@ class MainWindow(QMainWindow):
         own = vis_parent(node)
         sibs = [n for n in present if vis_parent(n) is own]
         if self._view_mode == "cards":
-            # Bez rušení drží hotové úkoly dole – posouvej jen v rámci té části,
-            # kde úkol právě stojí, ať se neprohodí s někým „přes hranici"
-            done = node.meta.get("_status") == "done"
-            sibs = [n for n in sibs if (n.meta.get("_status") == "done") == done]
+            # Bez rušení řadí úkoly do skupin podle stavu – posouvej jen v rámci
+            # té skupiny, ve které úkol stojí, ať nepřeskočí přes hranici skupiny
+            g = self._group_index(node)
+            sibs = [n for n in sibs if self._group_index(n) == g]
         key, desc = self.filter_panel.current_sort()
         return sort_nodes(sibs, key, desc)
 

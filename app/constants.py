@@ -53,6 +53,23 @@ SORT_OPTIONS = {
 # Pořadí pro řazení podle stavu
 STATUS_ORDER = list(STATUSES.keys())
 
+# Skupiny stavů pro režim „Bez rušení" (karty). Pořadí skupin je pevné, uvnitř
+# skupiny se řadí podle vlastního pořadí. Přesun v pořadí jde jen v rámci skupiny.
+STATUS_GROUPS = (
+    ("active", ("in_progress", "todo")),
+    ("waiting", ("waiting",)),
+    ("blocked", ("blocked",)),
+    ("done", ("done",)),
+)
+
+# stav -> index skupiny (neznámý stav spadne na konec)
+STATUS_GROUP_INDEX = {
+    st: i for i, (_key, states) in enumerate(STATUS_GROUPS) for st in states
+}
+
+# skupina, která se v úsporném zobrazení NEzmenšuje (plná výška karet)
+FULL_HEIGHT_GROUP = "active"
+
 # Klíče metadat v YAML (vše s podtržítkem na začátku = systémová metadata)
 META_KEYS = (
     "_id",

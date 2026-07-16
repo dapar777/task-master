@@ -56,9 +56,10 @@ class CardWidget(QFrame):
     opened = Signal(object)
     statusToggled = Signal(object, str)
 
-    def __init__(self, node, parent=None, resolver=None):
+    def __init__(self, node, parent=None, resolver=None, compact=False):
         super().__init__(parent)
         self.node = node
+        self.compact = compact
         self.setObjectName("card")
         self.setProperty("selected", False)
         # šířka se přizpůsobí oknu; výška roste podle zalomeného obsahu
@@ -83,7 +84,8 @@ class CardWidget(QFrame):
         title = QLabel(("🚩 " if node.flag else "") + node.title)
         tcolor = "#888" if done else "#1c1c1c"
         tdec = "text-decoration: line-through;" if done else ""
-        title.setStyleSheet(f"font-size:16px; font-weight:bold; color:{tcolor}; {tdec}")
+        tsize = 13 if compact else 16
+        title.setStyleSheet(f"font-size:{tsize}px; font-weight:bold; color:{tcolor}; {tdec}")
         title.setWordWrap(True)
 
         # decentní odznak s počtem nedokončených podúkolů
@@ -101,23 +103,30 @@ class CardWidget(QFrame):
             )
             title_row.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
 
-        path = QLabel(breadcrumb(node))
+        blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
+
+        path_text = breadcrumb(node)
+        # úsporná karta si blokující úkol připojí k cestě, ať se ta informace neztratí
+        if compact and node.blocked_by:
+            path_text += "   ⛔ " + (blocker.title if blocker else "(smazaný úkol)")
+        path = QLabel(path_text)
         path.setStyleSheet("color:#666; font-size:11px;")
         path.setWordWrap(True)  # ať nediktuje minimální šířku karty
 
-        blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
-        props = QLabel(_props_text(node, blocker))
-        props.setStyleSheet("color:#333; font-size:12px;")
-        props.setWordWrap(True)
-
         left = QVBoxLayout()
-        left.setSpacing(3)
+        left.setSpacing(1 if compact else 3)
         left.addLayout(title_row)
         left.addWidget(path)
-        left.addWidget(props)
+        # úsporné zobrazení: bez řádku vlastností (stav/priorita/pořadí)
+        if not compact:
+            props = QLabel(_props_text(node, blocker))
+            props.setStyleSheet("color:#333; font-size:12px;")
+            props.setWordWrap(True)
+            left.addWidget(props)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(10, 8, 10, 8)
+        m = 4 if compact else 8
+        row.setContentsMargins(10, m, 10, m)
         row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(left, 1)
 
@@ -192,12 +201,19 @@ class CardView(QScrollArea):
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty.setStyleSheet("color:#999; font-size:14px;")
 
-    def populate(self, nodes) -> None:
+    def populate(self, nodes, compact_fn=None) -> None:
+        """Naplní karty. compact_fn(node) -> True pro úspornou (nižší) kartu."""
         while self.vbox.count():
             item = self.vbox.takeAt(0)
             w = item.widget()
-            if w is not None:
+            if w is not None and w is not self._empty:
+                # okamžité odpojení: deleteLater() by widget nechal ve stromu
+                # potomků až do dalšího eventloopu → při rychlém překreslení
+                # (např. přepnutí úsporného režimu) prosvítají „duchové" karet
+                w.setParent(None)
                 w.deleteLater()
+            elif w is self._empty:
+                w.setParent(None)  # sdílený štítek jen vyjmi, nemaž
         self._cards = {}
         self._order = []
 
@@ -207,7 +223,8 @@ class CardView(QScrollArea):
             return
 
         for node in nodes:
-            card = CardWidget(node, resolver=self.resolver)
+            compact = bool(compact_fn(node)) if compact_fn else False
+            card = CardWidget(node, resolver=self.resolver, compact=compact)
             card.selected.connect(self._on_card_clicked)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
