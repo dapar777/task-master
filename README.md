@@ -36,6 +36,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 💾 **Uložené filtry (presety)** – pamatují podmínky, zobrazení i řazení; lze přiřadit **vlastní zkratku**.
 - 📌 **Aktivní úkol zůstává vidět** – nově vytvořený nebo právě upravený úkol, který nevyhovuje filtru, zůstane zobrazený, dokud je aktivní (po opuštění zmizí). Změna filtru naopak přepne na první vyhovující.
 - 📊 **Statistiky** (`F8`, menu *Nastavení*) – počty úkolů dle stavu, **založené a uzavřené** za den / týden / posledních 14 dní (sloupcový graf), **doba od posledního uzavřeného úkolu** a **doba do uzavření** úkolu (průměr, medián, min/max + histogram). Čas uzavření se zaznamenává do `_completed` při přechodu na *hotovo*.
+- 📅 **Dnešní počty na spodní liště** – průběžně zobrazuje počet **dnes vytvořených** (`+N`) a **dnes dokončených** (`✓N`) úkolů.
 - 💾 **Perzistence stavu** – aktivní úkol, filtr a zobrazení se ukládají do `workspace/_state.yaml` a obnoví po startu.
 - ⌨️ **Plně ovladatelné klávesnicí** s **konfigurovatelnými zkratkami**.
 

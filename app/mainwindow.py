@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
@@ -135,6 +136,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.stack)
 
         self.status = self.statusBar()
+        # dnešní počty (vytvořené/dokončené) vlevo, cesta k prostoru vpravo
+        self.today_label = QLabel("")
+        self.today_label.setToolTip("Dnes vytvořené / dokončené úkoly")
+        self.status.addPermanentWidget(self.today_label)
         self.ws_label = QLabel("")
         self.status.addPermanentWidget(self.ws_label)
 
@@ -339,6 +344,27 @@ class MainWindow(QMainWindow):
             return
         StatsDialog(list(self.workspace.all_nodes()), self).exec()
 
+    def _update_today_counts(self) -> None:
+        """Do spodní lišty vypíše počet dnes vytvořených a dnes dokončených úkolů."""
+        if not self.workspace:
+            self.today_label.setText("")
+            return
+        today = date.today()
+
+        def is_today(iso: str) -> bool:
+            try:
+                return datetime.fromisoformat(iso).date() == today if iso else False
+            except (ValueError, TypeError):
+                return False
+
+        created = completed = 0
+        for n in self.workspace.all_nodes():
+            if is_today(n.meta.get("_created")):
+                created += 1
+            if is_today(n.meta.get("_completed")):
+                completed += 1
+        self.today_label.setText(f"Dnes: +{created} / ✓{completed}")
+
     # ------------------------------------------------------------------
     # Workspace
     # ------------------------------------------------------------------
@@ -490,6 +516,7 @@ class MainWindow(QMainWindow):
         self.filter_panel.populate_dynamic(
             self.workspace.all_categories(), self.workspace.all_tags()
         )
+        self._update_today_counts()
 
     def _flat_sequence(self, exclude=None) -> list:
         """Přesně to pořadí, v jakém úkoly stojí v plochém pohledu (seznam/karty).
