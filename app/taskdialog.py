@@ -224,14 +224,23 @@ class BlockerDialog(QDialog):
     rozklikávací strom všech úkolů s hledáním.
     """
 
-    def __init__(self, node, roots, recent, current_id="", parent=None):
+    def __init__(self, node, roots, recent, current_id="", parent=None,
+                 nodes=None):
         super().__init__(parent)
         self.setWindowTitle("Blokující úkol")
         self.setMinimumWidth(420)
         self._roots = roots or []
         self._temp_idx = None
+        # úkoly, které NEsmí být nabídnuty jako blokující (samy sebe / celý výběr)
+        skip_nodes = list(nodes) if nodes else [node]
 
-        info = QLabel(f"Co blokuje úkol „{node.title}“?\nVýběr je nepovinný.")
+        if len(skip_nodes) > 1:
+            info = QLabel(
+                f"Co blokuje {len(skip_nodes)} označených úkolů?\n"
+                "Zvolený úkol se přiřadí všem. Výběr je nepovinný."
+            )
+        else:
+            info = QLabel(f"Co blokuje úkol „{node.title}“?\nVýběr je nepovinný.")
         info.setStyleSheet("color:#555;")
 
         # combobox: žádný + naposledy použité blokující úkoly
@@ -256,8 +265,9 @@ class BlockerDialog(QDialog):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.setMaximumHeight(240)
+        self._skip = set(skip_nodes)
         for r in self._roots:
-            self._add_tree_item(r, None, skip=node)
+            self._add_tree_item(r, None)
         self.tree.itemSelectionChanged.connect(self._on_tree_pick)
 
         self.tree_box = QWidget()
@@ -288,12 +298,13 @@ class BlockerDialog(QDialog):
                 self.blocker_combo.setCurrentIndex(i)
         self.blocker_combo.setFocus()
 
-    def _add_tree_item(self, node, parent_item, skip=None) -> None:
-        # úkol nemůže blokovat sám sebe – vynech JEN jeho, ne celý podstrom
-        # (jeho podúkoly klidně blokovat mohou, proto se přivěsí o úroveň výš)
-        if node is skip:
+    def _add_tree_item(self, node, parent_item) -> None:
+        # vynechané úkoly (samy sebe / celý vícevýběr) nesmí blokovat – vynech
+        # JEN je, ne celý podstrom (jejich podúkoly klidně blokovat mohou, proto
+        # se přivěsí o úroveň výš k rodiči vynechaného úkolu)
+        if node in self._skip:
             for c in node.children:
-                self._add_tree_item(c, parent_item, skip=skip)
+                self._add_tree_item(c, parent_item)
             return
         done = node.meta.get("_status") == "done"
         it = QTreeWidgetItem([node.title + ("  (hotovo)" if done else "")])
@@ -307,7 +318,7 @@ class BlockerDialog(QDialog):
         else:
             parent_item.addChild(it)
         for c in node.children:
-            self._add_tree_item(c, it, skip=skip)
+            self._add_tree_item(c, it)
 
     def _toggle_tree(self, on: bool) -> None:
         self.tree_toggle.setText("Vybrat ze stromu ▾" if on else "Vybrat ze stromu ▸")
@@ -361,9 +372,13 @@ class BlockerDialog(QDialog):
                       geo.center().y() - self.height() // 2)
 
     @staticmethod
-    def get(parent, node, roots, recent, current_id="") -> str | None:
-        """Vrátí _id blokujícího úkolu ("" = žádný), None = zrušeno."""
-        dlg = BlockerDialog(node, roots, recent, current_id, parent)
+    def get(parent, node, roots, recent, current_id="", nodes=None) -> str | None:
+        """Vrátí _id blokujícího úkolu ("" = žádný), None = zrušeno.
+
+        Pro vícevýběr předej `nodes` – dialog vyloučí všechny z nabídky a
+        vrácené _id se přiřadí všem.
+        """
+        dlg = BlockerDialog(node, roots, recent, current_id, parent, nodes=nodes)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return dlg.blocker_combo.currentData() or ""
         return None

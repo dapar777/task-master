@@ -967,9 +967,11 @@ class MainWindow(QMainWindow):
         # po dokončení skoč na první úkol a odroluj nahoru
         QTimer.singleShot(0, lambda: self._after_status_toggle(going_done))
         # na blokující úkol se zeptej až po přebudování (dialog nesmí běžet
-        # uprostřed itemChanged signálu ze zaškrtávátka)
-        if status == "blocked" and len(nodes) == 1:
-            QTimer.singleShot(0, lambda n=nodes[0]: self._ask_blocker(n))
+        # uprostřed itemChanged signálu ze zaškrtávátka). Funguje i pro vícevýběr:
+        # jeden dialog, zvolený blokující úkol se přiřadí všem označeným.
+        if status == "blocked":
+            blocked_nodes = list(nodes)
+            QTimer.singleShot(0, lambda ns=blocked_nodes: self._ask_blocker(ns))
 
     def _unblocked_by(self, nodes) -> list:
         """Úkoly čekající na některý z `nodes` – dokončením se odblokují."""
@@ -981,40 +983,62 @@ class MainWindow(QMainWindow):
             if n.blocked_by in done_ids and n not in nodes
         ]
 
-    def _ask_blocker(self, node) -> None:
-        """Nabídne (nepovinně) výběr úkolu, který tento úkol blokuje."""
-        if not self.workspace or node.meta.get("_status") != "blocked":
+    def _ask_blocker(self, nodes) -> None:
+        """Nabídne (nepovinně) blokující úkol; přiřadí ho všem `nodes`.
+
+        Přijímá jeden uzel i seznam (vícevýběr). U vícevýběru se zeptá jednou
+        a zvolený blokující úkol přiřadí všem, které jsou ještě ve stavu blocked.
+        """
+        if not self.workspace:
             return
+        if not isinstance(nodes, (list, tuple)):
+            nodes = [nodes]
+        # ber jen ty, které opravdu skončily jako „blokováno"
+        nodes = [n for n in nodes if n.meta.get("_status") == "blocked"]
+        if not nodes:
+            return
+        selset = set(nodes)
         recent = [
             r for r in (self.workspace.node_by_id(i)
                         for i in self.workspace.recent_blockers())
-            if r is not None and r is not node
+            if r is not None and r not in selset
         ]
+        # předvyplň vazbou, jen když ji všechny sdílejí (jinak nech prázdné)
+        cur = {n.blocked_by for n in nodes}
+        current_id = next(iter(cur)) if len(cur) == 1 else ""
+        primary = nodes[0]
         chosen = BlockerDialog.get(
-            self, node, self.workspace.roots, recent, node.blocked_by
+            self, primary, self.workspace.roots, recent, current_id, nodes=nodes
         )
         if chosen is None:
             return  # zrušeno – stav „blokováno" zůstává, jen bez vazby
         target = self.workspace.node_by_id(chosen) if chosen else None
-        # blokovat už hotovým úkolem by úkol nechalo viset navždy (odblokovává
-        # se až při jeho dokončení, které nikdy nepřijde) – rovnou se odblokuje
+        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        # blokovat už hotovým úkolem by úkoly nechalo viset navždy (odblokovává
+        # se až při jeho dokončení, které nikdy nepřijde) – rovnou je odblokuj
         if target is not None and target.meta.get("_status") == "done":
-            self.undo.push_fields([(node.task_id, node.meta)])
-            node.set_field("_status", "todo")
-            self.detail.sync_status("todo")
+            for n in nodes:
+                n.set_field("_status", "todo")
+            if self.detail.node in selset:
+                self.detail.sync_status("todo")
             self.status.showMessage(
-                f"„{target.title}“ je hotový – úkol jde rovnou zpracovat", 3000
+                f"„{target.title}“ je hotový – "
+                + ("úkoly jdou" if len(nodes) > 1 else "úkol jde") + " rovnou zpracovat",
+                3000,
             )
             self._populate()
-            self._select_in_view(node)
+            self._reselect(nodes)
             return
-        node.set_blocked_by(chosen)
+        for n in nodes:
+            n.set_blocked_by(chosen)
         if chosen:
             self.workspace.push_recent_blocker(chosen)
             if target is not None:
-                self.status.showMessage(f"Blokuje: {target.title}", 3000)
+                msg = (f"Blokuje {len(nodes)} úkolů: {target.title}"
+                       if len(nodes) > 1 else f"Blokuje: {target.title}")
+                self.status.showMessage(msg, 3000)
         self._populate()
-        self._select_in_view(node)
+        self._reselect(nodes)
 
     def _after_status_toggle(self, going_done: bool) -> None:
         self._populate()
