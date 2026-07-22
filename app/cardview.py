@@ -33,6 +33,8 @@ def _props_text(node, blocker=None) -> str:
     status = STATUSES.get(node.meta.get("_status", ""), "?")
     if node.blocked_by:
         status += f" ⛔ {blocker.title}" if blocker is not None else " ⛔ (smazaný úkol)"
+    elif node.auto_blocked:
+        status += " ⛔ auto (podúkoly čekají/blokují)"
     parts = [
         f"Stav: {status}",
         f"Priorita: {node.meta.get('_priority', '?')}",
@@ -106,9 +108,11 @@ class CardWidget(QFrame):
         blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
 
         path_text = breadcrumb(node)
-        # úsporná karta si blokující úkol připojí k cestě, ať se ta informace neztratí
+        # úsporná karta si blokující info připojí k cestě, ať se neztratí
         if compact and node.blocked_by:
             path_text += "   ⛔ " + (blocker.title if blocker else "(smazaný úkol)")
+        elif compact and node.auto_blocked:
+            path_text += "   ⛔ auto"
         path = QLabel(path_text)
         path.setStyleSheet("color:#666; font-size:11px;")
         path.setWordWrap(True)  # ať nediktuje minimální šířku karty

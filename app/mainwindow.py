@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
@@ -37,7 +37,7 @@ from .savedfiltersdialog import SavedFiltersDialog
 from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
 from .stats import StatsDialog
-from .storage import Workspace, now_iso, parse_indented_text, serialize_node
+from .storage import Workspace, now_iso, parse_dt, parse_indented_text, serialize_node
 from .taskdialog import BlockerDialog, TaskDialog, ask_paste_position
 from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_flat, sort_nodes
@@ -351,11 +351,9 @@ class MainWindow(QMainWindow):
             return
         today = date.today()
 
-        def is_today(iso: str) -> bool:
-            try:
-                return datetime.fromisoformat(iso).date() == today if iso else False
-            except (ValueError, TypeError):
-                return False
+        def is_today(value) -> bool:
+            dt = parse_dt(value)
+            return dt is not None and dt.date() == today
 
         created = completed = 0
         for n in self.workspace.all_nodes():
@@ -500,6 +498,9 @@ class MainWindow(QMainWindow):
     def _populate(self) -> None:
         if not self.workspace:
             return
+        # automatické (od)blokování podle stavu podúkolů – před vykreslením,
+        # ať se změny hned promítnou (idempotentní, když není co měnit)
+        self._recompute_auto_blocks()
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)
@@ -1009,6 +1010,43 @@ class MainWindow(QMainWindow):
             n for n in self.workspace.all_nodes()
             if n.blocked_by in done_ids and n not in nodes
         ]
+
+    def _recompute_auto_blocks(self) -> list:
+        """Automaticky (od)blokuje tasky podle stavu jejich přímých podúkolů.
+
+        Task se zablokuje, když má aspoň jeden nedokončený přímý podúkol a všechny
+        jeho nedokončené přímé podúkoly jsou ve stavu „čeká"/„blokováno" (přepíše
+        i „probíhá"). Automaticky zablokovaný task se vrátí na „ke zpracování",
+        jakmile podmínka přestane platit. Ruční blokování (bez příznaku
+        _auto_blocked) se nepřepisuje.
+
+        Běží do ustálení – změna potomka může vyvolat auto-blok rodiče a kaskádovat
+        výš. Vrací změněné uzly (pro undo/hlášku).
+        """
+        if not self.workspace:
+            return []
+        changed = []
+        for _ in range(64):  # strop proti teoretické oscilaci; reálně 1–2 průchody
+            round_changed = []
+            for n in self.workspace.all_nodes():
+                st = n.meta.get("_status")
+                if st == "done":
+                    continue
+                if n.should_auto_block():
+                    # zablokuj jen aktivní (todo/probíhá) – ruční blocked nech být
+                    if st in ("todo", "in_progress"):
+                        n.set_field("_status", "blocked")
+                        n.meta["_auto_blocked"] = True
+                        n.save_meta()
+                        round_changed.append(n)
+                elif n.auto_blocked:
+                    # podmínka pominula a blokoval to automat -> zpět na todo
+                    n.set_field("_status", "todo")  # set_field smaže _auto_blocked
+                    round_changed.append(n)
+            if not round_changed:
+                break
+            changed.extend(round_changed)
+        return changed
 
     def _ask_blocker(self, nodes) -> None:
         """Nabídne (nepovinně) blokující úkol; přiřadí ho všem `nodes`.

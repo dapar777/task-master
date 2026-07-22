@@ -25,13 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from .constants import STATUSES
-
-
-def _parse_dt(s):
-    try:
-        return datetime.fromisoformat(s) if s else None
-    except (ValueError, TypeError):
-        return None
+from .storage import parse_dt as _parse_dt
 
 
 def _fmt_duration(hours: float) -> str:

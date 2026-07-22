@@ -209,6 +209,8 @@ class TaskTreeWidget(QTreeWidget):
         status_text = STATUSES.get(status, str(status))
         if node.blocked_by:
             status_text += " ⛔"
+        elif node.auto_blocked:
+            status_text += " ⛔ auto"
         item.setText(1, status_text)
         item.setText(2, str(PRIORITIES.get(priority, priority)))
         if status in STATUS_COLORS:
@@ -233,6 +235,8 @@ class TaskTreeWidget(QTreeWidget):
         if node.blocked_by:
             blocker = self.resolver(node.blocked_by) if self.resolver else None
             tip += "\nblokuje: " + (blocker.title if blocker else "(smazaný úkol)")
+        elif node.auto_blocked:
+            tip += "\nautomaticky blokováno (všechny podúkoly čekají/blokují)"
         if n_links:
             text += f"  📎{n_links}"
             tip += f"\nsouborů: {n_links}"

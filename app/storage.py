@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -41,6 +41,25 @@ def slugify(title: str) -> str:
 
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def parse_dt(value) -> "datetime | None":
+    """Bezpečně převede metadatový čas na datetime.
+
+    Zvládne řetězec (běžný případ – now_iso) i datetime/date objekt, který
+    vrátí YAML, když je datum v souboru zapsané bez uvozovek (ruční editace).
+    Neplatné/prázdné hodnoty vrací None.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    try:
+        return datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 def default_meta(title: str) -> dict:
@@ -174,9 +193,11 @@ class TaskNode:
                 self.meta.setdefault("_completed", now_iso())
             else:
                 self.meta.pop("_completed", None)
-            # vazba na blokující úkol dává smysl jen ve stavu „blocked"
+            # vazba na blokující úkol i příznak auto-blokování dávají smysl
+            # jen ve stavu „blocked"
             if value != "blocked":
                 self.meta["_blocked_by"] = ""
+                self.meta.pop("_auto_blocked", None)
         self.meta[key] = value
         self.touch()
 
@@ -191,6 +212,26 @@ class TaskNode:
     def set_blocked_by(self, target_id: str) -> None:
         self.meta["_blocked_by"] = str(target_id or "")
         self.touch()
+
+    # ----- automatické blokování podle přímých podúkolů -----
+    @property
+    def auto_blocked(self) -> bool:
+        """True, když je task ve stavu blocked kvůli automatickému pravidlu."""
+        return (self.meta.get("_status") == "blocked"
+                and bool(self.meta.get("_auto_blocked", False)))
+
+    def should_auto_block(self) -> bool:
+        """Má se task automaticky zablokovat?
+
+        Ano, právě když má aspoň jeden nedokončený PŘÍMÝ podúkol a všechny jeho
+        nedokončené přímé podúkoly jsou ve stavu „čeká" nebo „blokováno".
+        """
+        pending = [c for c in self.children
+                   if c.meta.get("_status") != "done"]
+        if not pending:
+            return False
+        return all(c.meta.get("_status") in ("waiting", "blocked")
+                   for c in pending)
 
     def set_order(self, value: float) -> None:
         """Nastaví vlastní pořadí (float) bez změny času úpravy."""

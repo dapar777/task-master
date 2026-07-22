@@ -20,6 +20,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
 - 🏷 **Stavy úkolu**: *Ke zpracování*, *Probíhá*, *Čeká* (na vnější věc), *Blokováno*, *Hotovo* – barevně odlišené.
 - ⛔ **Blokující úkol** – při přechodu na *Blokováno* lze (nepovinně) zadat úkol, který tě blokuje: v dialogu je **kombobox naposledy použitých** blokujících a **rozklikávací strom** s hledáním. Po **dokončení blokujícího** úkolu přejdou všechny jím blokované na *Ke zpracování*. Osiřelou vazbu (blokující úkol smazán / přesunut) aplikace uklidí sama. Funguje i pro **vícenásobný výběr** – dialog se zeptá jednou a zvolený blokující úkol přiřadí všem označeným.
+- 🤖 **Automatické blokování** – jakmile má úkol aspoň jeden nedokončený **přímý** podúkol a **všechny** jeho nedokončené přímé podúkoly jsou ve stavu *Čeká* nebo *Blokováno*, úkol se sám přepne na *Blokováno* (značka „⛔ auto"). Jakmile podmínka pomine (některý podúkol se rozpracuje/dokončí), vrátí se automaticky na *Ke zpracování*. **Ruční** blokování se nepřepisuje.
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
 - 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
@@ -69,6 +70,7 @@ _modified: 2026-06-24T14:05:00
 _order: 0               # vlastní pořadí (float, globálně jedinečné)
 _flag: false            # vlaječka (Ctrl+T)
 _blocked_by: ''         # _id blokujícího úkolu (jen ve stavu blocked)
+_auto_blocked: false    # true = blokováno automaticky podle stavu podúkolů
 _links:                 # přetažené soubory jako odkazy (necopírují se)
   - name: smlouva.pdf
     path: C:/Users/.../smlouva.pdf
