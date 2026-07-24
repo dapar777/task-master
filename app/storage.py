@@ -167,8 +167,35 @@ class TaskNode:
                 return ""
         return ""
 
+    @property
+    def has_body(self) -> bool:
+        """Má úkol neprázdný popis (po odstranění bílých znaků)?
+
+        Výsledek se cachuje – popis se z disku mění jen přes write_body, který
+        cache aktualizuje. Prázdný .md (0 B) odbavíme bez čtení; jinak se soubor
+        přečte jednou a ořízne. Bez cache by čtení stovek souborů při každém
+        překreslení karet znatelně zpomalovalo.
+        """
+        cached = getattr(self, "_has_body", None)
+        if cached is not None:
+            return cached
+        try:
+            size = self.md_path.stat().st_size
+        except OSError:
+            self._has_body = False
+            return False
+        if size == 0:
+            self._has_body = False
+        elif size > 16:
+            # dost velký na to, aby to nebyly jen bílé znaky/odřádkování – nečti
+            self._has_body = True
+        else:
+            self._has_body = bool(self.read_body().strip())
+        return self._has_body
+
     def write_body(self, text: str) -> None:
         self.md_path.write_text(text or "", encoding="utf-8")
+        self._has_body = bool((text or "").strip())  # aktualizuj cache
         self.touch()
 
     # ----- metadata -----

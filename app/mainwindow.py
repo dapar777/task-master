@@ -128,6 +128,7 @@ class MainWindow(QMainWindow):
         self.card_view.cardSelected.connect(self._on_card_selected)
         self.card_view.cardOpened.connect(self._on_card_opened)
         self.card_view.cardStatusToggled.connect(self._on_status_toggled)
+        self.card_view.cardContextMenu.connect(self._show_card_menu)
 
         # přepínání normální / karty
         self.stack = QStackedWidget()
@@ -791,6 +792,29 @@ class MainWindow(QMainWindow):
             else:
                 menu.addAction(self.act[cid])
         menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _build_card_menu(self, node) -> QMenu:
+        """Sestaví kontextové menu pro kartu (bez zobrazení – kvůli testům)."""
+        menu = QMenu(self)
+        # editace = otevřít úkol v editoru (přepne do stromu a dá fokus editoru)
+        open_act = menu.addAction("✎ Otevřít v editoru")
+        open_act.triggered.connect(lambda: self._on_card_opened(node))
+        menu.addSeparator()
+        for cid in ("task.new", "task.new_sub", None,
+                    "task.copy", "task.cut", "task.paste", None,
+                    "task.rename", "task.delete", None,
+                    "task.flag", "task.toggle_done", None, "edit.undo"):
+            if cid is None:
+                menu.addSeparator()
+            else:
+                menu.addAction(self.act[cid])
+        return menu
+
+    def _show_card_menu(self, node, global_pos) -> None:
+        """Kontextové menu v režimu Bez rušení (karty)."""
+        if node is None:
+            return
+        self._build_card_menu(node).exec(global_pos)
 
     @staticmethod
     def _has_selected_ancestor(node, sel) -> bool:

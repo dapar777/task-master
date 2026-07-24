@@ -57,6 +57,7 @@ class CardWidget(QFrame):
     selected = Signal(object, object)  # (node, klávesové modifikátory)
     opened = Signal(object)
     statusToggled = Signal(object, str)
+    contextRequested = Signal(object, object)  # (node, globální pozice)
 
     def __init__(self, node, parent=None, resolver=None, compact=False):
         super().__init__(parent)
@@ -83,12 +84,19 @@ class CardWidget(QFrame):
         self.check.setToolTip("Hotovo")
         self.check.toggled.connect(self._on_check)
 
-        title = QLabel(("🚩 " if node.flag else "") + node.title)
+        # indikace neprázdného popisu přímo v názvu (📝)
+        has_body = node.has_body
+        title_text = ("🚩 " if node.flag else "") + node.title
+        if has_body:
+            title_text += "  📝"
+        title = QLabel(title_text)
         tcolor = "#888" if done else "#1c1c1c"
         tdec = "text-decoration: line-through;" if done else ""
         tsize = 13 if compact else 16
         title.setStyleSheet(f"font-size:{tsize}px; font-weight:bold; color:{tcolor}; {tdec}")
         title.setWordWrap(True)
+        if has_body:
+            title.setToolTip("Úkol má popis")
 
         # decentní odznak s počtem nedokončených podúkolů
         title_row = QHBoxLayout()
@@ -177,11 +185,18 @@ class CardWidget(QFrame):
         self.opened.emit(self.node)
         super().mouseDoubleClickEvent(event)
 
+    def contextMenuEvent(self, event):
+        # menu operuje na tomto úkolu; když je součástí vícevýběru, ponech ho,
+        # jinak kartu vyber jednotlivě (bez modifikátorů) – řeší CardView níž
+        self.contextRequested.emit(self.node, event.globalPos())
+        event.accept()
+
 
 class CardView(QScrollArea):
     cardSelected = Signal(object)
     cardOpened = Signal(object)
     cardStatusToggled = Signal(object, str)
+    cardContextMenu = Signal(object, object)  # (node, globální pozice)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -232,6 +247,7 @@ class CardView(QScrollArea):
             card.selected.connect(self._on_card_clicked)
             card.opened.connect(self.cardOpened)
             card.statusToggled.connect(self.cardStatusToggled)
+            card.contextRequested.connect(self._on_card_context)
             self.vbox.addWidget(card)  # roztáhne se na šířku okna
             key = str(node.path)
             self._cards[key] = card
@@ -307,6 +323,18 @@ class CardView(QScrollArea):
             self._anchor = path
         self._apply_selection_styles()
         self.cardSelected.emit(node)
+
+    def _on_card_context(self, node, global_pos) -> None:
+        # když úkol není součástí vícevýběru, vyber ho jednotlivě, ať menu
+        # operuje na tom, na co uživatel klikl pravým tlačítkem
+        path = str(node.path)
+        if path not in self._selected:
+            self._selected = {path}
+            self._focus = path
+            self._anchor = path
+            self._apply_selection_styles()
+            self.cardSelected.emit(node)
+        self.cardContextMenu.emit(node, global_pos)
 
     # ----- navigace klávesnicí -----
     def _move_selection(self, delta: int, extend: bool = False) -> None:
