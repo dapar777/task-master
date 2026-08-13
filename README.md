@@ -25,7 +25,8 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
 - 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
 - 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí.
-- 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (karty přes celou šířku okna, výška se přizpůsobí zalomenému názvu; po najetí na kartu se v plovoucím okénku ukáže text úkolu). Po dokončení úkolu skočí výběr na první úkol a odroluje nahoru. Pozadí karty je **obarvené podle stavu vlevo a priority vpravo** (plynulý přechod, poměr 3:1); úkol s nedokončenými podúkoly nese decentní odznak `↳ N`, úkol s **neprázdným popisem** značku `📝`. Pravým tlačítkem se na kartě otevře **kontextové menu** (mj. *Otevřít v editoru*, kopírovat, přejmenovat, smazat, přepnout hotovo…).
+- 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (karty přes celou šířku okna, výška se přizpůsobí zalomenému názvu; po najetí na kartu se v plovoucím okénku ukáže text úkolu). Po dokončení úkolu skočí výběr na první úkol a odroluje nahoru (**jen v Bez rušení**, kde se karty přeskupují do skupin – ve stromu a seznamu výběr zůstává na místě). Pozadí karty je **obarvené podle stavu vlevo a priority vpravo** (plynulý přechod, poměr 3:1); úkol s nedokončenými podúkoly nese decentní odznak `↳ N`, úkol s **neprázdným popisem** značku `📝`. Pravým tlačítkem se na kartě otevře **kontextové menu** (mj. *Otevřít v editoru*, kopírovat, přejmenovat, smazat, přepnout hotovo…).
+- 🌳 **Stabilní strom** – ručně **sbalené větve zůstanou sbalené** i po změně stavu, přidání úkolu nebo jiné akci (nové úkoly jsou výchozí rozbalené); zachová se i **pozice rolování**, takže pohled neposkočí. Sbalení přežije i přepnutí do seznamu a zpět. Výjimka: úkol vybraný **pod** sbaleným rodičem (např. nově vytvořený podúkol) rodiče rozbalí, aby byl vidět.
 - 🧩 **Podúkoly nad rodičem** – v **seznamu i Bez rušení** stojí podúkoly nad svým nadřazeným úkolem; každý rodič si drží souvislý blok, hlouběji vnořené jsou výš.
 - 📇 **Skupiny podle stavu v Bez rušení** – karty se řadí do pevného pořadí skupin: **Probíhá + Ke zpracování → Čeká → Blokováno → Hotovo**. Přesun v pořadí (`Ctrl+W/Q`) se pohybuje **jen v rámci skupiny**.
 - 📉 **Úsporné zobrazení karet** (`Ctrl+Shift+E`, menu *Zobrazení*, **defaultně zapnuto**) – karty mimo skupinu *Probíhá + Ke zpracování* jsou **nižší** (jen název a cesta, bez řádku vlastností).
@@ -197,5 +198,22 @@ app/
   savedfiltersdialog.py dialog pro správu uložených filtrů
   appicon.py            kreslená moderní ikona aplikace (zaškrtnutý checkbox)
   mainwindow.py         MainWindow – menu, kontextové menu, navigace, propojení
+tests/                  headless testy chování stromu (viz níže)
 run.vbs / run.bat       spuštění na Windows bez konzolového okna
 ```
+
+## Testy
+
+```
+python tests/run_all.py
+```
+
+Testy běží **headless** (Qt offscreen) nad **dočasným workspace** – na `workspace/`
+ani na uložené nastavení aplikace nesahají. Pokrývají chování, které se snadno
+rozbije při úpravách překreslování stromu:
+
+| Sada | Co hlídá |
+| --- | --- |
+| `test_tree_state.py` | sbalené větve a pozice rolování přežijí přebudování, přejmenování i přesun |
+| `test_status_focus.py` | změna stavu ve stromu **nepřehodí výběr** na první úkol (v Bez rušení ano) |
+| `test_reparent_rename.py` | drag & drop a `F2` přes `MainWindow` nerozbalí cizí větve |

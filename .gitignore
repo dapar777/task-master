@@ -9,6 +9,9 @@ venv/
 /workspace/
 /assets/
 
+# Nástroje
+/.claude/
+
 # OS
 Thumbs.db
 desktop.ini

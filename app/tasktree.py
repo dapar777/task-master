@@ -97,6 +97,8 @@ class TaskTreeWidget(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tree_mode = True
+        self._was_tree_mode = False   # první naplnění: nic sbaleného k zapamatování
+        self._collapsed: set[str] = set()  # ručně sbalené úkoly (přežijí přebudování)
         self.resolver = None  # id -> TaskNode (nastaví hlavní okno)
         self.setColumnCount(3)
         self.setHeaderLabels(["Úkol", "Stav", "Priorita"])
@@ -158,6 +160,12 @@ class TaskTreeWidget(QTreeWidget):
         self._sort_key = sort_key
         self._sort_desc = sort_desc
         selected = self.current_node()
+        # sbalený stav si pamatuj i přes přepnutí do plochého režimu (kde žádný
+        # není) – po návratu do stromu tak zůstane, jak si ho uživatel nastavil
+        if self._was_tree_mode:
+            self._collapsed = self._collapsed_paths()
+        self._was_tree_mode = tree_mode
+        vpos = self.verticalScrollBar().value()
         self.blockSignals(True)
         self.clear()
         if tree_mode:
@@ -165,7 +173,9 @@ class TaskTreeWidget(QTreeWidget):
                 item = self._build_tree(r, match_fn)
                 if item is not None:
                     self.addTopLevelItem(item)
+            # nové položky výchozí rozbalené, ručně sbalené zůstanou sbalené
             self.expandAll()
+            self._restore_collapsed(self._collapsed)
         else:
             nodes = [n for n in self._iter_all(roots) if match_fn(n)]
             for node in sort_flat(nodes, sort_key, sort_desc):
@@ -173,6 +183,43 @@ class TaskTreeWidget(QTreeWidget):
         self.blockSignals(False)
         if selected is not None:
             self.select_node(selected)
+        # obnov pozici rolování (select_node sám o sobě neroluje)
+        self.verticalScrollBar().setValue(vpos)
+
+    @staticmethod
+    def _collapse_key(node: TaskNode) -> str:
+        """Klíč sbaleného stavu: stabilní _id (přežije přejmenování i přesun),
+        cesta jen jako záloha pro úkoly bez _id."""
+        return node.task_id or str(node.path)
+
+    def _collapsed_paths(self) -> set[str]:
+        """Úkoly, které má uživatel ručně sbalené (přežijí přebudování)."""
+        out = set()
+        stack = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            if it is None:
+                continue
+            n = it.data(0, NODE_ROLE)
+            if n is not None and it.childCount() and not it.isExpanded():
+                out.add(self._collapse_key(n))
+            for i in range(it.childCount()):
+                stack.append(it.child(i))
+        return out
+
+    def _restore_collapsed(self, collapsed: set[str]) -> None:
+        if not collapsed:
+            return
+        stack = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            if it is None:
+                continue
+            n = it.data(0, NODE_ROLE)
+            if n is not None and self._collapse_key(n) in collapsed:
+                it.setExpanded(False)
+            for i in range(it.childCount()):
+                stack.append(it.child(i))
 
     def _sorted(self, nodes):
         return sort_nodes(
@@ -287,6 +334,8 @@ class TaskTreeWidget(QTreeWidget):
             return False
         self.blockSignals(True)
         self.clearSelection()
+        for it in items:
+            self._expand_ancestors(it)  # skrytá pod sbaleným rodičem by nebyla vidět
         # nejdřív aktuální (setCurrentItem výběr přenastaví), pak doplň ostatní
         self.setCurrentItem(items[0])
         for it in items:
@@ -300,13 +349,15 @@ class TaskTreeWidget(QTreeWidget):
         self.taskSelected.emit(self.current_node())
 
     def select_node(self, node: TaskNode) -> bool:
-        return self._select(str(node.path), silent=True)
+        # obnova výběru při přebudování: předky NErozbaluj – uživatel mohl větev
+        # s vybraným úkolem právě sbalit a to je novější záměr než starý výběr
+        return self._select(str(node.path), silent=True, expand=False)
 
     def select_path(self, path: str) -> bool:
         """Vybere úkol podle cesty a vyvolá signál výběru (načte detail)."""
         return self._select(str(path), silent=False)
 
-    def _select(self, target_path: str, silent: bool) -> bool:
+    def _select(self, target_path: str, silent: bool, expand: bool = True) -> bool:
         it = self._find_item_by_path(target_path)
         if it is None:
             return False
@@ -314,12 +365,20 @@ class TaskTreeWidget(QTreeWidget):
         # signály blokuj a vyšli jen jednou s finálním stavem (jinak přechodné None)
         self.blockSignals(True)
         self.clearSelection()
+        if expand:
+            self._expand_ancestors(it)  # skrytá pod sbaleným rodičem by nebyla vidět
         self.setCurrentItem(it)
         it.setSelected(True)
         self.blockSignals(False)
         if not silent:
             self.taskSelected.emit(self.current_node())
         return True
+
+    def _expand_ancestors(self, item) -> None:
+        p = item.parent()
+        while p is not None:
+            p.setExpanded(True)
+            p = p.parent()
 
     def _find_item_by_path(self, path: str):
         stack = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]

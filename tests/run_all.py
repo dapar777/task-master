@@ -1,0 +1,38 @@
+"""Spustí všechny testovací sady a vypíše souhrn.
+
+Testy jsou headless (Qt offscreen) a pracují nad dočasným workspace –
+na `workspace/` ani na uložené nastavení aplikace nesahají.
+
+Spuštění:  python tests/run_all.py
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+TESTS = [
+    ("test_tree_state.py", "strom: sbalení, rolování, přejmenování, přesun"),
+    ("test_status_focus.py", "změna stavu: výběr neskáče na první úkol"),
+    ("test_reparent_rename.py", "drag & drop a F2 přes MainWindow"),
+]
+
+
+def main() -> int:
+    here = Path(__file__).resolve().parent
+    failed = []
+    for name, desc in TESTS:
+        print(f"=== {name} – {desc}")
+        r = subprocess.run([sys.executable, str(here / name)])
+        if r.returncode != 0:
+            failed.append(name)
+        print()
+    if failed:
+        print("SELHALO: " + ", ".join(failed))
+        return 1
+    print(f"Vše prošlo ({len(TESTS)} sady).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

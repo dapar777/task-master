@@ -1130,9 +1130,18 @@ class MainWindow(QMainWindow):
         self._reselect(nodes)
 
     def _after_status_toggle(self, going_done: bool) -> None:
+        sel = self._selected_nodes()
         self._populate()
-        if going_done:
+        if going_done and self._view_mode == "cards":
+            # Bez rušení: karty se přeskupují do skupin, hotová odskočí dolů –
+            # skoč na první úkol nahoře. Ve stromu/seznamu výběr zůstává na místě.
             self._focus_first_task()
+        elif len(sel) > 1 and self._view_mode == "cards":
+            self.card_view.select_paths([str(n.path) for n in sel])
+        elif len(sel) > 1:
+            self.tree.select_paths([n.path for n in sel])
+        elif sel:
+            self._select_in_view(sel[0])  # bez kradení fokusu
 
     def _focus_first_task(self) -> None:
         """Vybere první úkol v aktuálním zobrazení a odroluje nahoru."""
