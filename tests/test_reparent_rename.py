@@ -1,6 +1,8 @@
 """End-to-end přes MainWindow: přesun (drag&drop) a přejmenování (F2)
 nesmí rozbalit sbalené větve, kterých se netýkají."""
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -19,6 +21,8 @@ from app.mainwindow import MainWindow  # noqa: E402
 from app.storage import Workspace  # noqa: E402
 
 tmp = Path(tempfile.mkdtemp(prefix="tm_reparent_"))
+# po sobě ukliď i při pádu testu
+atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
 ws = Workspace(tmp)
 ws.load()
 

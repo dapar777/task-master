@@ -1,5 +1,7 @@
 """Headless kontrola: sbalený stav a pozice rolování přežijí populate()."""
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -15,6 +17,8 @@ from app.tasktree import TaskTreeWidget  # noqa: E402
 app = QApplication.instance() or QApplication([])
 
 tmp = Path(tempfile.mkdtemp(prefix="tm_test_"))
+# po sobě ukliď i při pádu testu
+atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
 ws = Workspace(tmp)
 ws.load()
 
