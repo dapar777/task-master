@@ -1725,9 +1725,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Undo + přepnutí hotovo
     # ------------------------------------------------------------------
-    def _snapshot(self) -> None:
-        if self.workspace:
-            self.undo.snapshot(self.workspace.root)
 
     def _undo(self) -> None:
         if not self.workspace or not self.undo.can_undo():

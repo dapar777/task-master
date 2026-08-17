@@ -30,7 +30,12 @@ class UndoManager:
 
     # ----- ukládání záznamů -----
     def snapshot(self, workspace_root: Path) -> None:
-        """Kopie celého workspace (drahé – jen pro strukturální operace)."""
+        """Kopie celého workspace – VELMI drahé, roste s počtem úkolů.
+
+        Aplikace ji dnes nikde nevolá; všechny operace mají levný záznam výše.
+        Zůstává jako fallback pro případnou operaci, kterou by nešlo popsat
+        cestami ani metadaty. Než ji použiješ, zvaž raději nový druh záznamu.
+        """
         try:
             dest = self._base / f"snap_{self._counter}"
             self._counter += 1
