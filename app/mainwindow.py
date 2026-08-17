@@ -189,6 +189,10 @@ class MainWindow(QMainWindow):
         td = self._make("task.toggle_done", self._toggle_done, target=self.tree)
         td.setAutoRepeat(False)
         self.card_view.addAction(td)
+        # zablokovat sourozence vybraným úkolem (strom i karty)
+        bs = self._make("task.block_siblings", self._block_siblings)
+        bs.setAutoRepeat(False)
+        self.card_view.addAction(bs)
         # undo (strom i karty; editor má vlastní Ctrl+Z)
         un = self._make("edit.undo", self._undo, target=self.tree)
         un.setAutoRepeat(False)
@@ -259,6 +263,7 @@ class MainWindow(QMainWindow):
         m_task.addAction(self.act["task.priority_down"])
         m_task.addAction(self.act["task.flag"])
         m_task.addAction(self.act["task.toggle_done"])
+        m_task.addAction(self.act["task.block_siblings"])
 
         m_view = mb.addMenu("&Zobrazení")
         for cid in ("view.tree", "view.list", "view.cards"):
@@ -786,7 +791,7 @@ class MainWindow(QMainWindow):
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", "task.paste_text", None,
                     "task.rename", "task.delete", None, "task.flag", "task.toggle_done",
-                    None, "edit.undo"):
+                    "task.block_siblings", None, "edit.undo"):
             if cid is None:
                 menu.addSeparator()
             else:
@@ -803,7 +808,8 @@ class MainWindow(QMainWindow):
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", None,
                     "task.rename", "task.delete", None,
-                    "task.flag", "task.toggle_done", None, "edit.undo"):
+                    "task.flag", "task.toggle_done", "task.block_siblings",
+                    None, "edit.undo"):
             if cid is None:
                 menu.addSeparator()
             else:
@@ -1137,6 +1143,102 @@ class MainWindow(QMainWindow):
                 self.status.showMessage(msg, 3000)
         self._populate()
         self._reselect(nodes)
+
+    def _block_siblings(self) -> None:
+        """Vybraným úkolem zablokuje všechny sourozence i s jejich podstromy.
+
+        Hotové úkoly se přeskakují (blokovat dokončený úkol nedává smysl) a
+        stejně tak už blokované – jejich existující vazba se nepřepisuje.
+        Vybraný úkol ani jeho vlastní podstrom se nemění: na tom se pracuje.
+        """
+        if not self.workspace:
+            return
+        node = self._current_node
+        if node is None:
+            return
+        if not node.task_id:
+            QMessageBox.warning(
+                self, "Blokování",
+                "Úkol nemá identifikátor, nelze jím blokovat.",
+            )
+            return
+        if node.meta.get("_status") == "done":
+            QMessageBox.warning(
+                self, "Blokování",
+                f"Úkol „{node.title}“ je hotový – blokované úkoly by se už "
+                "neodblokovaly (odblokování spouští až jeho dokončení).",
+            )
+            return
+
+        candidates = self.workspace.sibling_subtrees(node)
+        targets = [
+            n for n in candidates
+            if n.meta.get("_status") not in ("done", "blocked")
+        ]
+        skipped_done = sum(1 for n in candidates
+                           if n.meta.get("_status") == "done")
+        skipped_blocked = sum(1 for n in candidates
+                              if n.meta.get("_status") == "blocked")
+        if not targets:
+            detail = []
+            if skipped_done:
+                detail.append(f"{skipped_done} hotových")
+            if skipped_blocked:
+                detail.append(f"{skipped_blocked} už blokovaných")
+            self.status.showMessage(
+                "Není co zablokovat"
+                + (f" (přeskočeno: {', '.join(detail)})" if detail else ""),
+                4000,
+            )
+            return
+
+        if not self._confirm_block_siblings(node, targets,
+                                            skipped_done, skipped_blocked):
+            return
+
+        self.undo.push_fields([(n.task_id, n.meta) for n in targets])
+        for n in targets:
+            n.set_field("_status", "blocked")
+            n.set_blocked_by(node.task_id)
+        self.workspace.push_recent_blocker(node.task_id)
+        if self.detail.node in targets:
+            self.detail.sync_status("blocked")
+        parts = [f"Zablokováno úkolů: {len(targets)} – „{node.title}“"]
+        if skipped_done or skipped_blocked:
+            sk = []
+            if skipped_done:
+                sk.append(f"{skipped_done} hotových")
+            if skipped_blocked:
+                sk.append(f"{skipped_blocked} už blokovaných")
+            parts.append("přeskočeno " + ", ".join(sk))
+        self.status.showMessage("; ".join(parts), 5000)
+        self._populate()
+        self._select_in_view(node)
+
+    def _confirm_block_siblings(self, node, targets,
+                                skipped_done: int, skipped_blocked: int) -> bool:
+        """Potvrzení – jde o hromadnou změnu, která se hůř bere zpět ručně."""
+        names = [n.title for n in targets[:5]]
+        preview = "\n".join(f"  • {t}" for t in names)
+        if len(targets) > len(names):
+            preview += f"\n  … a další ({len(targets) - len(names)})"
+        skipped = []
+        if skipped_done:
+            skipped.append(f"{skipped_done} hotových")
+        if skipped_blocked:
+            skipped.append(f"{skipped_blocked} už blokovaných")
+        text = (
+            f"Úkolem „{node.title}“ zablokovat {len(targets)} úkolů "
+            "(sourozenci a jejich podúkoly)?\n\n" + preview
+        )
+        if skipped:
+            text += "\n\nPřeskočí se: " + ", ".join(skipped) + "."
+        r = QMessageBox.question(
+            self, "Zablokovat sourozence?", text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return r == QMessageBox.StandardButton.Yes
 
     def _after_status_toggle(self, jumped_down: bool = False) -> None:
         sel = self._selected_nodes()

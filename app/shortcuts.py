@@ -41,6 +41,8 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "task.paste": ("Vložit úkol", "Úkoly", "Ctrl+V", "tree"),
     "task.paste_text": ("Vložit úkoly z textu", "Úkoly", "Ctrl+Shift+V", "tree"),
     "task.toggle_done": ("Přepnout hotovo", "Úkoly", "Ctrl+Return", "reorder"),
+    "task.block_siblings": ("Zablokovat sourozence (i s podúkoly)", "Úkoly",
+                            "Ctrl+Shift+B", "window"),
     "edit.undo": ("Vrátit zpět", "Úkoly", "Ctrl+Z", "reorder"),
     # Aplikace / zobrazení
     "app.open_workspace": ("Otevřít prostor…", "Aplikace", "Ctrl+O", "window"),

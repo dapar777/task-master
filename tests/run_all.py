@@ -16,6 +16,7 @@ TESTS = [
     ("test_status_focus.py", "změna stavu: výběr neskáče na první úkol"),
     ("test_reparent_rename.py", "drag & drop a F2 přes MainWindow"),
     ("test_cards_scroll.py", "Bez rušení: pohled skáče nahoru jen při odsunu aktivní karty"),
+    ("test_block_siblings.py", "blokování sourozenců i s jejich podúkoly"),
 ]
 
 

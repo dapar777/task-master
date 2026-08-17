@@ -20,6 +20,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
 - 🏷 **Stavy úkolu**: *Ke zpracování*, *Probíhá*, *Čeká* (na vnější věc), *Blokováno*, *Hotovo* – barevně odlišené.
 - ⛔ **Blokující úkol** – při přechodu na *Blokováno* lze (nepovinně) zadat úkol, který tě blokuje: v dialogu je **kombobox naposledy použitých** blokujících a **rozklikávací strom** s hledáním. Po **dokončení blokujícího** úkolu přejdou všechny jím blokované na *Ke zpracování*. Osiřelou vazbu (blokující úkol smazán / přesunut) aplikace uklidí sama. Funguje i pro **vícenásobný výběr** – dialog se zeptá jednou a zvolený blokující úkol přiřadí všem označeným.
+- 🚧 **Zablokovat sourozence** (`Ctrl+Shift+B`, menu *Úkol* i kontextové menu) – vybraným úkolem zablokuje **všechny sourozence a celé jejich podstromy**, takže zbyde jen to, na čem právě pracuješ. Vybraný úkol ani jeho vlastní podúkoly se nemění. **Přeskočí hotové** (ty už blokovat nejde) i **už blokované** (existující vazba zůstane). Před provedením se zeptá a ukáže seznam; vrátit lze přes `Ctrl+Z`. Po **dokončení** vybraného úkolu se všechno zablokované rozjede zpět na *Ke zpracování*.
 - 🤖 **Automatické blokování** – jakmile má úkol aspoň jeden nedokončený **přímý** podúkol a **všechny** jeho nedokončené přímé podúkoly jsou ve stavu *Čeká* nebo *Blokováno*, úkol se sám přepne na *Blokováno* (značka „⛔ auto"). Jakmile podmínka pomine (některý podúkol se rozpracuje/dokončí), vrátí se automaticky na *Ke zpracování*. **Ruční** blokování se nepřepisuje.
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
@@ -135,6 +136,7 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+Shift+V` | Vložit úkoly z textu | fokus na stromu |
 | `Ctrl+Z` | Vrátit zpět (undo) | fokus na stromu / kartách |
 | `Ctrl+Enter` | Přepnout hotovo | fokus na stromu / kartách |
+| `Ctrl+Shift+B` | Zablokovat sourozence (i s podúkoly) | kdekoli |
 | `Ctrl+S` / `F5` | Uložit / obnovit | kdekoli |
 | `Ctrl+O` | Otevřít prostor | kdekoli |
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
@@ -228,3 +230,4 @@ výběr a pohled**:
 | `test_status_focus.py` | změna stavu ve stromu **nepřehodí výběr** na první úkol; v Bez rušení jen při odsunu aktivní karty |
 | `test_reparent_rename.py` | drag & drop a `F2` přes `MainWindow` nerozbalí cizí větve |
 | `test_cards_scroll.py` | Bez rušení: pohled skáče nahoru **jen** při odsunu aktivní karty |
+| `test_block_siblings.py` | blokování sourozenců i s podstromy; výjimky, undo, odblokování |

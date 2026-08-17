@@ -537,6 +537,23 @@ class Workspace:
         return None
 
     # ----- blokování -----
+    def siblings_of(self, node: "TaskNode") -> list["TaskNode"]:
+        """Sourozenci úkolu BEZ něj samotného.
+
+        Na rozdíl od TaskNode.siblings funguje i pro kořenové úkoly – ty mají
+        sourozence taky, jen je drží workspace, ne rodič.
+        """
+        group = node.parent.children if node.parent is not None else self.roots
+        return [n for n in group if n is not node]
+
+    def sibling_subtrees(self, node: "TaskNode") -> list["TaskNode"]:
+        """Sourozenci úkolu i s celými jejich podstromy (bez `node` a jeho dětí)."""
+        out = []
+        for sib in self.siblings_of(node):
+            out.append(sib)
+            out.extend(sib.iter_descendants())
+        return out
+
     def blocked_by_node(self, node: "TaskNode") -> list["TaskNode"]:
         """Úkoly, které blokuje daný úkol (a čekají na jeho dokončení)."""
         tid = node.task_id
