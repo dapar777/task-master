@@ -723,10 +723,16 @@ class MainWindow(QMainWindow):
                 return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
+        # levné záznamy místo kopie celého workspace (viz _on_rename):
+        # vložení = nový podstrom, vyjmutí = smazání zdroje
+        was_cut = self._clip["mode"] == "cut"
+        if was_cut:
+            src = self.workspace.node_by_id(self._clip["src_id"])
+            if src is not None:
+                self.undo.push_deleted([src.path])
         new = self.workspace.create_subtree(target, self._clip["data"])
         new_id = new.meta.get("_id")
-        was_cut = self._clip["mode"] == "cut"
+        self.undo.push_created([new_id])
         if was_cut:
             src = self.workspace.node_by_id(self._clip["src_id"])
             if src is not None:
@@ -758,7 +764,6 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
         cur_id = cur.task_id if cur is not None else None
         if pos == "under":
             parent_node = cur
@@ -770,6 +775,8 @@ class MainWindow(QMainWindow):
         for r in roots:
             n = self.workspace.create_subtree(parent_node, r)
             created_ids.append(n.meta.get("_id"))
+        # levný záznam místo kopie celého workspace: undo nové úkoly smaže
+        self.undo.push_created(created_ids)
         self.workspace.load()
         if pos == "after" and cur_id:
             prev = self.workspace.node_by_id(cur_id)
@@ -1661,14 +1668,18 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
         dragged_id, ref_id = dragged.task_id, ref.task_id
+        # levné záznamy místo kopie celého workspace: pořadí je jen metadata,
+        # případná změna rodiče je přesun adresáře (viz _on_rename)
+        old_path = str(dragged.path)
+        self.undo.push_fields([(dragged_id, dragged.meta)])
         try:
             if dragged.parent is not ref.parent:
                 if ref.parent is None:
                     self.workspace.move_to_root(dragged)
                 else:
                     dragged.move_to(ref.parent.path)
+                self.undo.push_moved(old_path, str(dragged.path))
                 self.workspace.load()
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přesun selhal:\n{e}")

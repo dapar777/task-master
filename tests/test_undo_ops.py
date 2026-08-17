@@ -133,6 +133,38 @@ kind, payload = win.undo.entries[-1]
 check("'moved' nese jen cesty (žádná kopie dat)",
       kind == "moved" and isinstance(payload, tuple) and len(payload) == 3)
 
+# další kroky pracují nad čerstvými daty (předchozí kroky mění názvy)
+win.workspace.create_root("Prvni")
+win.workspace.create_root("Druhy")
+win.workspace.load()
+win._populate()
+app.processEvents()
+
+print("5) PŘEUSPOŘÁDÁNÍ tažením nedělá snapshot")
+src, ref = node("Prvni"), node("Druhy")
+check("testovací úkoly existují", src is not None and ref is not None)
+win._on_reorder(src, ref, True)
+app.processEvents()
+kinds = [k for k, _ in win.undo.entries]
+check("žádný snapshot v záznamech", "snapshot" not in kinds)
+check("použit levný záznam", bool(kinds) and kinds[-1] in ("fields", "moved"))
+
+print("6) VLOŽENÍ ze schránky a undo")
+before = len(titles())
+win._current_node = node("Prvni")
+win._copy_task()
+win._current_node = node("Druhy")
+win._paste_task()
+app.processEvents()
+check(f"vložením přibyl úkol ({before} -> {len(titles())})",
+      len(titles()) > before)
+check("žádný snapshot v záznamech",
+      "snapshot" not in [k for k, _ in win.undo.entries])
+win._undo()
+app.processEvents()
+check(f"undo vložený úkol odebralo ({len(titles())})",
+      len(titles()) == before)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

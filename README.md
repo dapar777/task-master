@@ -198,11 +198,14 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
   přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
   zneplatní otisky karet a vynutí jejich kompletní přestavbu.
 - **Undo** nekopíruje celý workspace: přejmenování a přesun ukládají jen cesty
-  (`moved`), mazání zálohuje jen mazané podstromy (`deleted`).
+  (`moved`), mazání zálohuje jen mazané podstromy (`deleted`), přeuspořádání
+  jen metadata (`fields`) a vkládání jen id nových úkolů (`created`). Kopie
+  celého prostoru (`snapshot`) zůstává jen jako fallback.
 
-Orientační čísla (medián, 750 úkolů): vytvoření podúkolu ~160 ms (před
-optimalizací přes 4 s), přejmenování / přesun / mazání ~0,7–1 s (dřív ~3,5 s),
-překreslení stromu ~50 ms, karet ~270 ms, načtení celého stromu z disku ~670 ms.
+Orientační čísla (medián, 750 úkolů, dřívější hodnoty v závorce): vytvoření
+podúkolu ~160 ms (4,1 s), přeuspořádání tažením ~160 ms (3,4 s), vložení ze
+schránky ~690 ms (4,0 s), přejmenování / přesun / mazání ~0,7–1 s (~3,5 s),
+překreslení stromu ~50 ms, karet ~270 ms, načtení stromu z disku ~670 ms.
 
 ## Architektura
 
