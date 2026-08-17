@@ -233,6 +233,35 @@ ws.load()
 check("zmizelý úkol se po načtení neobjeví",
       not any(n.title == "Duch" for n in ws.all_nodes()))
 
+print("16) Strukturální operace na zmizelém adresáři nepoloží načtení")
+# mazání smí selhat tiše (cíl je stejně splněn), přesun a přejmenování
+# musí chybu ohlásit voláním výš – ani jedno nesmí být neošetřená výjimka
+gone = ws.create_root("Zmizik")
+ws.load()
+gone = node("Zmizik")
+gone_path = gone.path
+shutil.rmtree(gone_path)
+try:
+    gone.delete()  # rmtree(ignore_errors=True)
+    check("delete() na zmizelém adresáři nevyhodí výjimku", True)
+except Exception as e:  # noqa: BLE001
+    check(f"delete() nevyhodí výjimku ({type(e).__name__})", False)
+ws.load()
+check("zmizelý úkol není ve stromu",
+      not any(n.title == "Zmizik" for n in ws.all_nodes()))
+
+# přesun a přejmenování hlásí chybu výjimkou – UI ji chytá a ukáže hlášku
+ghost2 = ws.create_root("Zmizik2")
+ws.load()
+ghost2 = node("Zmizik2")
+shutil.rmtree(ghost2.path)
+raised = False
+try:
+    ghost2.rename_dir("Zmizik2 nove")
+except OSError:
+    raised = True
+check("rename_dir na zmizelém adresáři hlásí OSError (UI ji chytá)", raised)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
