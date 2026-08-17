@@ -1002,6 +1002,9 @@ class MainWindow(QMainWindow):
             [(n.task_id, n.meta) for n in nodes]
             + [(n.task_id, n.meta) for n in unblocked]
         )
+        # skupinu aktivní karty zjisti PŘED změnou (v Bez rušení určuje pořadí)
+        active = self._current_node
+        group_before = self._group_index(active) if active is not None else None
         for n in nodes:
             n.set_field("_status", status)
         for n in unblocked:
@@ -1014,10 +1017,16 @@ class MainWindow(QMainWindow):
                 + (f" – „{unblocked[0].title}“" if len(unblocked) == 1 else ""),
                 3000,
             )
-        going_done = status == "done"
-        # přebudování odlož mimo právě probíhající itemChanged signál;
-        # po dokončení skoč na první úkol a odroluj nahoru
-        QTimer.singleShot(0, lambda: self._after_status_toggle(going_done))
+        # Nahoru skoč jen tehdy, když změna odsunula AKTIVNÍ kartu do nižší
+        # skupiny – tehdy pod kurzorem nic smysluplného nezůstane. Když měníš
+        # stav jiné karty (nebo se skupina nemění), pohled se nehýbe.
+        jumped_down = (
+            active is not None
+            and group_before is not None
+            and self._group_index(active) > group_before
+        )
+        # přebudování odlož mimo právě probíhající itemChanged signál
+        QTimer.singleShot(0, lambda: self._after_status_toggle(jumped_down))
         # na blokující úkol se zeptej až po přebudování (dialog nesmí běžet
         # uprostřed itemChanged signálu ze zaškrtávátka). Funguje i pro vícevýběr:
         # jeden dialog, zvolený blokující úkol se přiřadí všem označeným.
@@ -1129,12 +1138,13 @@ class MainWindow(QMainWindow):
         self._populate()
         self._reselect(nodes)
 
-    def _after_status_toggle(self, going_done: bool) -> None:
+    def _after_status_toggle(self, jumped_down: bool = False) -> None:
         sel = self._selected_nodes()
         self._populate()
-        if going_done and self._view_mode == "cards":
-            # Bez rušení: karty se přeskupují do skupin, hotová odskočí dolů –
-            # skoč na první úkol nahoře. Ve stromu/seznamu výběr zůstává na místě.
+        if jumped_down and self._view_mode == "cards":
+            # Bez rušení: aktivní kartu odsunula změna stavu do nižší skupiny,
+            # takže by pod kurzorem nezůstalo nic rozumného – skoč nahoru.
+            # Jen tady; editace ani přidání karty pohled nepřehazují.
             self._focus_first_task()
         elif len(sel) > 1 and self._view_mode == "cards":
             self.card_view.select_paths([str(n.path) for n in sel])
@@ -1149,7 +1159,8 @@ class MainWindow(QMainWindow):
             if self.card_view._order:
                 path = self.card_view._order[0]
                 self.card_view.select_path(path)
-                self.card_view.verticalScrollBar().setValue(0)
+                # až po odloženém obnovení rolování z populate(), ať to nepřebije
+                QTimer.singleShot(0, self.card_view.scroll_to_top)
                 self.card_view.setFocus()
                 node = next((n for n in self.workspace.all_nodes() if str(n.path) == path), None)
                 if node is not None:

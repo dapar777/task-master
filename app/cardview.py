@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import html
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -222,6 +222,7 @@ class CardView(QScrollArea):
 
     def populate(self, nodes, compact_fn=None) -> None:
         """Naplní karty. compact_fn(node) -> True pro úspornou (nižší) kartu."""
+        vpos = self.verticalScrollBar().value()
         while self.vbox.count():
             item = self.vbox.takeAt(0)
             w = item.widget()
@@ -258,8 +259,32 @@ class CardView(QScrollArea):
         if self._focus not in self._cards:
             self._focus = None
         self._apply_selection_styles()
-        if self._focus in self._cards:
-            self.ensureWidgetVisible(self._cards[self._focus])
+        # Pozici rolování obnov až po přepočítání layoutu – karty tu ještě
+        # nemají geometrii, takže scrollbar má rozsah 0 a okamžitý zápis
+        # (i ensureWidgetVisible) by pohled srazil nahoru.
+        QTimer.singleShot(0, lambda v=vpos: self._restore_scroll(v))
+
+    def _restore_scroll(self, vpos: int) -> None:
+        """Vrať pohled tam, kde byl – přebudování samo o sobě nesmí rolovat.
+
+        Nejdřív obnov pozici; teprve když aktivní karta po přeskupení vypadla
+        z výřezu, dorovnej na ni (ensureWidgetVisible samotný nestačí – během
+        přepočtu layoutu je „vidět" i karta na nulové pozici).
+        """
+        sb = self.verticalScrollBar()
+        sb.setValue(min(vpos, sb.maximum()))
+        card = self._cards.get(self._focus)
+        if card is None:
+            return
+        top = card.y()
+        bottom = top + card.height()
+        view_top = sb.value()
+        view_bottom = view_top + self.viewport().height()
+        if top < view_top or bottom > view_bottom:
+            self.ensureWidgetVisible(card)
+
+    def scroll_to_top(self) -> None:
+        self.verticalScrollBar().setValue(0)
 
     def _apply_selection_styles(self) -> None:
         for p, card in self._cards.items():

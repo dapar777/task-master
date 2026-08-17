@@ -15,6 +15,7 @@ TESTS = [
     ("test_tree_state.py", "strom: sbalení, rolování, přejmenování, přesun"),
     ("test_status_focus.py", "změna stavu: výběr neskáče na první úkol"),
     ("test_reparent_rename.py", "drag & drop a F2 přes MainWindow"),
+    ("test_cards_scroll.py", "Bez rušení: pohled skáče nahoru jen při odsunu aktivní karty"),
 ]
 
 

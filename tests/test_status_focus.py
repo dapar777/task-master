@@ -10,6 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import Qt, QSettings  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
@@ -83,16 +84,33 @@ app.processEvents()
 check("stav zpět na todo", node3.meta.get("_status") == "todo")
 check(f"výběr stále Task 3 (je {current_title()!r})", current_title() == target_title)
 
-print("3) KARTY: 'hotovo' pořád skáče na první (Bez rušení beze změny)")
+print("3) KARTY: stav JINÉ karty pohled nepřehazuje")
 win._view_mode = "cards"
 win._populate()
+app.processEvents()
+
+# 3a) stav JINÉ než aktivní karty – aktivní se nemění, pohled nepřeskakuje
+active = next(n for n in ws.roots if n.title == "Task 4")
+win._current_node = active
+win._select_in_view(active)
 app.processEvents()
 node2 = next(n for n in ws.roots if n.title == "Task 2")
 win._apply_status_to([node2], "done")
 app.processEvents()
+QTest.qWait(60)
+app.processEvents()
+check("stav JINÉ karty nechá aktivní kartu být",
+      win._current_node is not None and win._current_node.title == "Task 4")
+
+# 3b) stav AKTIVNÍ karty, která tím spadne do nižší skupiny -> skok nahoru
+print("4) KARTY: dokončení AKTIVNÍ karty skočí na první")
+win._apply_status_to([win._current_node], "done")
+app.processEvents()
+QTest.qWait(60)
+app.processEvents()
 if win.card_view._order:
     top_path = win.card_view._order[0]
-    check("v kartách je aktivní první karta shora",
+    check("po dokončení aktivní karty je aktivní první karta shora",
           win._current_node is not None and str(win._current_node.path) == top_path)
 else:
     print("  SKIP  prázdné karty")
