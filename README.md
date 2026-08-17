@@ -198,7 +198,7 @@ app/
   savedfiltersdialog.py dialog pro správu uložených filtrů
   appicon.py            kreslená moderní ikona aplikace (zaškrtnutý checkbox)
   mainwindow.py         MainWindow – menu, kontextové menu, navigace, propojení
-tests/                  headless testy chování stromu (viz níže)
+tests/                  headless testy chování stromu a karet (viz níže)
 run.vbs / run.bat       spuštění na Windows bez konzolového okna
 ```
 
@@ -210,11 +210,12 @@ python tests/run_all.py
 
 Testy běží **headless** (Qt offscreen) nad **dočasným workspace** – na `workspace/`
 ani na uložené nastavení aplikace nesahají. Pokrývají chování, které se snadno
-rozbije při úpravách překreslování stromu:
+rozbije při úpravách překreslování stromu i karet – **kam se po akci podívá
+výběr a pohled**:
 
 | Sada | Co hlídá |
 | --- | --- |
 | `test_tree_state.py` | sbalené větve a pozice rolování přežijí přebudování, přejmenování i přesun |
-| `test_status_focus.py` | změna stavu ve stromu **nepřehodí výběr** na první úkol (v Bez rušení ano) |
+| `test_status_focus.py` | změna stavu ve stromu **nepřehodí výběr** na první úkol; v Bez rušení jen při odsunu aktivní karty |
 | `test_reparent_rename.py` | drag & drop a `F2` přes `MainWindow` nerozbalí cizí větve |
 | `test_cards_scroll.py` | Bez rušení: pohled skáče nahoru **jen** při odsunu aktivní karty |
