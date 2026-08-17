@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
@@ -174,6 +174,43 @@ win._apply_status_to([back], "todo")
 settle()
 check("aktivní zůstala na 'Ukol 06' (neskočilo na první kartu)",
       win._current_node is not None and win._current_node.title == "Ukol 06")
+check(f"aktivní karta zůstala vidět (scroll={scroll()})", active_visible())
+
+print("8) ZRUŠENÝ potvrzovací dialog pohled nesráží")
+# úkol s nedokončenými podúkoly se ptá na potvrzení; uživatel dá Ne
+par = win.workspace.create_root("Rodic s podukoly")
+par.create_child("Sub A")
+par.create_child("Sub B")
+win.workspace.load()
+win._populate()
+settle()
+par = node("Rodic s podukoly")
+focus_on("Rodic s podukoly")
+settle()
+base8 = scroll()
+_orig_q = QMessageBox.question
+QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.No)
+try:
+    win._apply_status_to([par], "done")
+    settle()
+finally:
+    QMessageBox.question = _orig_q
+check("stav se nezměnil (dialog zrušen)",
+      node("Rodic s podukoly").meta.get("_status") != "done")
+check(f"scroll zůstal ({base8} -> {scroll()})", scroll() == base8)
+
+print("9) AUTO-BLOKOVÁNÍ aktivní karty ji nechá vidět")
+# oba podúkoly na „čeká" -> rodič se automaticky zablokuje (spadne do nižší
+# skupiny), ale nešlo o uživatelovu změnu TÉTO karty, takže se neskáče
+for t in ("Sub A", "Sub B"):
+    node(t).set_field("_status", "waiting")
+win._populate()
+settle()
+par = node("Rodic s podukoly")
+focus_on("Rodic s podukoly")
+settle()
+check("rodič je automaticky zablokovaný", par.auto_blocked)
+check("rodič spadl do nižší skupiny", win._group_index(par) > 0)
 check(f"aktivní karta zůstala vidět (scroll={scroll()})", active_visible())
 
 print()
