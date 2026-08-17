@@ -64,7 +64,7 @@ class CardWidget(QFrame):
         self.node = node
         self.compact = compact
         self.setObjectName("card")
-        self.setProperty("selected", False)
+        self.setProperty("selected", "false")  # stejný typ jako v set_selected
         # šířka se přizpůsobí oknu; výška roste podle zalomeného obsahu
         sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sp.setHeightForWidth(True)
@@ -173,7 +173,13 @@ class CardWidget(QFrame):
         )
 
     def set_selected(self, on: bool) -> None:
-        self.setProperty("selected", "true" if on else "false")
+        # Přepočet stylu (unpolish/polish) je drahý a volá se pro každou kartu
+        # při každém překreslení – u stovek úkolů to je znát. Dělej ho jen
+        # tehdy, když se stav výběru opravdu změnil.
+        want = "true" if on else "false"
+        if self.property("selected") == want:
+            return
+        self.setProperty("selected", want)
         self.style().unpolish(self)
         self.style().polish(self)
 

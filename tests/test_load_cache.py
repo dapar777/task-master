@@ -262,6 +262,31 @@ except OSError:
     raised = True
 check("rename_dir na zmizelém adresáři hlásí OSError (UI ji chytá)", raised)
 
+print("17) Nový úkol nesmí spustit přečíslování celého stromu")
+# _order musí být jedinečné GLOBÁLNĚ; kolize by přinutila normalize_orders()
+# přepsat a uložit každý úkol – při stovkách úkolů to trvá sekundy
+big = Workspace(tmp / "perf")
+big.load()
+roots = [big.create_root(f"R{i}") for i in range(6)]
+for r in roots:
+    for j in range(3):
+        big.create_child_of(r, f"{r.title}-{j}")
+big.load()
+orders_before = {str(n.path): n.order for n in big.all_nodes()}
+check("pořadí je globálně jedinečné",
+      len(set(orders_before.values())) == len(orders_before))
+
+target = next(n for n in big.roots if n.title == "R0")
+big.create_child_of(target, "Novy podukol")
+big.normalize_orders()
+orders_after = {str(n.path): n.order
+                for n in big.all_nodes() if str(n.path) in orders_before}
+changed = [k for k in orders_before if orders_before[k] != orders_after.get(k)]
+check(f"přidání nezměnilo pořadí ostatních (změněno {len(changed)})",
+      not changed)
+check("pořadí zůstalo jedinečné i s novým úkolem",
+      len({n.order for n in big.all_nodes()}) == len(list(big.all_nodes())))
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

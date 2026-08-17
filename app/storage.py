@@ -393,10 +393,13 @@ class TaskNode:
             self.touch()
 
     # ----- hierarchické operace -----
-    def create_child(self, title: str) -> "TaskNode":
+    def create_child(self, title: str, order: float | None = None) -> "TaskNode":
+        """Vytvoří podúkol. `order` předá volající (Workspace), aby bylo
+        globálně jedinečné – kolize spustí přečíslování celého stromu."""
         base = unique_dirname(self.path, slugify(title))
         child_dir = self.path / base
-        return _create_task_dir(child_dir, title, parent=self, append_to=self.children)
+        return _create_task_dir(child_dir, title, parent=self,
+                                append_to=self.children, order=order)
 
     def delete(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
@@ -450,11 +453,17 @@ class TaskNode:
                    if d.meta.get("_status") != "done")
 
 
-def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None) -> TaskNode:
+def _create_task_dir(task_dir: Path, title: str, parent=None, append_to=None,
+                     order: float | None = None) -> TaskNode:
     task_dir.mkdir(parents=True, exist_ok=False)
     meta = default_meta(title)
-    # nový úkol se zařadí na konec vlastního pořadí mezi sourozenci
-    if append_to:
+    # Nový úkol se zařadí na konec vlastního pořadí mezi sourozenci. Pořadí
+    # ale musí být jedinečné GLOBÁLNĚ (viz normalize_orders) – kdyby jen mezi
+    # sourozenci, kolidovalo by s jiným úkolem a normalize_orders by přečísloval
+    # (a uložil na disk) celý strom, což je při stovkách úkolů znát.
+    if order is not None:
+        meta["_order"] = float(order)
+    elif append_to:
         meta["_order"] = float(max((n.order for n in append_to), default=-1.0) + 1.0)
     # tělo zůstává prázdné (bez automatického nadpisu)
     (task_dir / f"{task_dir.name}.md").write_text("", encoding="utf-8")
@@ -571,14 +580,24 @@ class Workspace:
 
     def create_root(self, title: str) -> TaskNode:
         base = unique_dirname(self.root, slugify(title))
-        return _create_task_dir(self.root / base, title, parent=None, append_to=self.roots)
+        return _create_task_dir(self.root / base, title, parent=None,
+                                append_to=self.roots, order=self.next_order())
+
+    def create_child_of(self, parent: TaskNode, title: str) -> TaskNode:
+        """Podúkol s GLOBÁLNĚ jedinečným pořadím.
+
+        Přes tuhle cestu vytvářej podúkoly z aplikace: parent.create_child()
+        sám globální pořadí nezná a kolize by přinutila normalize_orders()
+        přečíslovat a uložit celý strom (při stovkách úkolů sekundy).
+        """
+        return parent.create_child(title, order=self.next_order())
 
     def create_subtree(self, parent: "TaskNode | None", data: dict) -> TaskNode:
         """Vytvoří úkol (a rekurzivně podúkoly) z dat (copy/paste, text)."""
         if parent is None:
             node = self.create_root(data.get("title", "Úkol"))
         else:
-            node = parent.create_child(data.get("title", "Úkol"))
+            node = self.create_child_of(parent, data.get("title", "Úkol"))
         meta = data.get("meta")
         if meta:
             for k, v in meta.items():

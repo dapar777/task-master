@@ -451,7 +451,7 @@ class MainWindow(QMainWindow):
                 "- Soubory přidáš **přetažením** na úkol\n"
                 "- Aplikace je plně ovladatelná klávesnicí (viz menu Nastavení → Klávesové zkratky)\n"
             )
-            sub = root.create_child("První podúkol")
+            sub = self.workspace.create_child_of(root, "První podúkol")
             sub.set_field("_status", "in_progress")
             sub.set_field("_priority", 8)
             sub.write_body("## Podúkol\n\nPodúkoly se ukládají jako podsložky.\n")
@@ -639,7 +639,7 @@ class MainWindow(QMainWindow):
         self.detail.commit()
         self.detail.discard()
         if parent is not None:
-            node = parent.create_child(vals["title"])
+            node = self.workspace.create_child_of(parent, vals["title"])
         else:
             node = self.workspace.create_root(vals["title"])
         self._apply_dialog_meta(node, vals)
@@ -668,7 +668,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        child = parent.create_child(vals["title"])
+        child = self.workspace.create_child_of(parent, vals["title"])
         self._apply_dialog_meta(child, vals)
         self.undo.push_created([child.task_id])
         self.workspace.normalize_orders()  # levné; bez plného načítání z disku
@@ -687,7 +687,7 @@ class MainWindow(QMainWindow):
             return
         self.detail.commit()
         self.detail.discard()
-        child = tnode.create_child(vals["title"])
+        child = self.workspace.create_child_of(tnode, vals["title"])
         self._apply_dialog_meta(child, vals)
         self.undo.push_created([child.task_id])
         self.workspace.normalize_orders()  # levné; bez plného načítání z disku
