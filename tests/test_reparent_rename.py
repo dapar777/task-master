@@ -10,19 +10,41 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
-QApplication.setOrganizationName("TaskMasterTest")
-QApplication.setApplicationName("TaskMasterTest_" + str(os.getpid()))
-
-from app.mainwindow import MainWindow  # noqa: E402
-from app.storage import Workspace  # noqa: E402
 
 tmp = Path(tempfile.mkdtemp(prefix="tm_reparent_"))
 # po sobě ukliď i při pádu testu
 atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
+
+# MainWindow si dělá QSettings(ORG_NAME, APP_NAME) NATVRDO, takže samotné
+# setOrganizationName/setApplicationName ho neizoluje – bez přesměrování by
+# si při startu načetl reálný workspace uživatele a přepsal v něm metadata.
+from app.constants import APP_NAME, ORG_NAME  # noqa: E402
+
+_s = QSettings(ORG_NAME, APP_NAME)
+_orig = {k: _s.value(k) for k in ("workspace", "view_mode")}
+
+
+def _restore_settings():
+    s = QSettings(ORG_NAME, APP_NAME)
+    for k, v in _orig.items():
+        if v is None:
+            s.remove(k)
+        else:
+            s.setValue(k, v)
+    s.sync()
+
+
+atexit.register(_restore_settings)
+_s.setValue("workspace", str(tmp))
+_s.setValue("view_mode", "tree")
+_s.sync()
+
+from app.mainwindow import MainWindow  # noqa: E402
+from app.storage import Workspace  # noqa: E402
 ws = Workspace(tmp)
 ws.load()
 
