@@ -94,6 +94,29 @@ node("Alfa").write_body("   ")
 ws.load()
 check("prázdný popis -> has_body False", node("Alfa").has_body is False)
 
+print("9) Změna zvenčí o STEJNÉ velikosti se taky pozná")
+# nejzrádnější případ: otisk je (mtime, velikost) – když se velikost nezmění,
+# musí změnu odhalit mtime. Proto se čeká, ať se čas prokazatelně liší.
+n = node("Alfa")
+n.set_field("_priority", 7)
+ws.load()
+yp = node("Alfa").yaml_path
+size_before = yp.stat().st_size
+time.sleep(0.02)
+txt = yp.read_text(encoding="utf-8")
+yp.write_text(txt.replace("_priority: 7", "_priority: 8"), encoding="utf-8")
+check("velikost souboru se nezměnila", yp.stat().st_size == size_before)
+ws.load()
+check("změna při stejné velikosti se načetla",
+      node("Alfa").meta.get("_priority") == 8)
+
+print("10) Recyklovaný uzel nedrží zastaralá metadata")
+before_id = id(node("Alfa"))
+ws.load()
+check("uzel se recykloval", id(node("Alfa")) == before_id)
+check("metadata odpovídají disku",
+      node("Alfa").meta.get("_priority") == 8)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
