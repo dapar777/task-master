@@ -144,6 +144,38 @@ if cv._order:
           win._current_node is not None
           and str(win._current_node.path) == cv._order[0])
 
+def active_visible() -> bool:
+    """Je aktivní karta vidět ve výřezu? (přesnou pozici porovnávat nelze –
+    select_path k aktivní kartě legitimně odroluje)"""
+    card = cv._cards.get(cv._focus)
+    if card is None:
+        return False
+    sb = cv.verticalScrollBar()
+    return (card.y() + card.height() > sb.value()
+            and card.y() < sb.value() + cv.viewport().height())
+
+
+print("6) VÍCEVÝBĚR bez aktivní karty nepřehodí výběr ani neskočí nahoru")
+focus_on("Ukol 05")
+settle()
+win._apply_status_to([node("Ukol 11"), node("Ukol 12")], "done")
+settle()
+check("aktivní karta se nezměnila",
+      win._current_node is not None and win._current_node.title == "Ukol 05")
+check(f"aktivní karta zůstala vidět (scroll={scroll()})", active_visible())
+
+print("7) ODŠKRTNUTÍ (posun NAHORU do vyšší skupiny) nepřehodí na první kartu")
+done_node = focus_on("Ukol 06")
+win._apply_status_to([done_node], "done")
+settle()
+back = focus_on("Ukol 06")  # postav se znovu na dokončený úkol
+settle()
+win._apply_status_to([back], "todo")
+settle()
+check("aktivní zůstala na 'Ukol 06' (neskočilo na první kartu)",
+      win._current_node is not None and win._current_node.title == "Ukol 06")
+check(f"aktivní karta zůstala vidět (scroll={scroll()})", active_visible())
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 win.close()
