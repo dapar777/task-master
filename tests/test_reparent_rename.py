@@ -150,4 +150,7 @@ check("Alfa nova je pod Beta",
 
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
+win.close()
+win.deleteLater()
+app.processEvents()   # doruč deleteLater hned, ať okno nevisí do konce procesu
 sys.exit(1 if fails else 0)
