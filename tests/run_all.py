@@ -21,6 +21,7 @@ TESTS = [
     ("test_load_cache.py", "cache načítání pozná změnu na disku"),
     ("test_stats.py", "statistiky: počty, odolnost, nezávislost na recyklaci"),
     ("test_dialogs_filters.py", "dialogy a uložené filtry"),
+    ("test_undo_ops.py", "undo strukturálních operací bez snapshotu"),
 ]
 
 

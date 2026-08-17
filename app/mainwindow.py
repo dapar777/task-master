@@ -852,7 +852,8 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Smazat úkol", msg) != QMessageBox.StandardButton.Yes:
             return
         self.detail.discard()
-        self._snapshot()
+        # zálohuj jen mazané podstromy, ne celý workspace (viz _on_rename)
+        self.undo.push_deleted([n.path for n in targets])
         for n in targets:
             n.delete()
         self._current_node = None
@@ -878,11 +879,16 @@ class MainWindow(QMainWindow):
     def _on_rename(self, node, new_title: str) -> None:
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
+        # levný záznam místo snapshotu: mění se jen cesta a titulek, obsah
+        # se nikam nekopíruje (kopie celého workspace trvá při stovkách
+        # úkolů sekundy)
+        old_path = str(node.path)
+        old_meta = dict(node.meta)
         try:
             node.rename_dir(new_title)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přejmenování selhalo:\n{e}")
+        self.undo.push_moved(old_path, str(node.path), old_meta)
         new_path = str(node.path)
         self.workspace.load()
         self._populate()
@@ -891,7 +897,7 @@ class MainWindow(QMainWindow):
     def _on_reparent(self, node, new_parent) -> None:
         self.detail.commit()
         self.detail.discard()
-        self._snapshot()
+        old_path = str(node.path)  # levný záznam místo snapshotu (viz _on_rename)
         try:
             if new_parent is None:
                 self.workspace.move_to_root(node)
@@ -900,6 +906,7 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přesun selhal:\n{e}")
             return
+        self.undo.push_moved(old_path, str(node.path))
         new_path = str(node.path)
         self.workspace.load()
         self._populate()
@@ -1724,8 +1731,8 @@ class MainWindow(QMainWindow):
         if kind is None:
             self.status.showMessage("Vrácení selhalo", 1500)
             return
-        if kind == "snapshot":
-            self.workspace.load()  # disk se změnil vcelku
+        if kind in ("snapshot", "moved", "deleted"):
+            self.workspace.load()  # změnila se struktura na disku
         # u „fields"/„created" je paměťový strom už konzistentní
         self._populate()
         if sel_path:

@@ -194,8 +194,15 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
 - Karty se vytvářejí **s rodičem** a plnění běží s vypnutými aktualizacemi –
   jinak Qt novou kartu na okamžik zobrazí jako samostatné okno mimo aplikaci.
 
-Orientační čísla (medián, 750 úkolů): překreslení stromu ~50 ms, karet ~270 ms
-(před optimalizací ~2,6 s), načtení celého stromu z disku ~670 ms.
+- **Pořadí úkolů** (`_order`) je globálně jedinečné už při vzniku. Kolize by
+  přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
+  zneplatní otisky karet a vynutí jejich kompletní přestavbu.
+- **Undo** nekopíruje celý workspace: přejmenování a přesun ukládají jen cesty
+  (`moved`), mazání zálohuje jen mazané podstromy (`deleted`).
+
+Orientační čísla (medián, 750 úkolů): vytvoření podúkolu ~160 ms (před
+optimalizací přes 4 s), přejmenování / přesun / mazání ~0,7–1 s (dřív ~3,5 s),
+překreslení stromu ~50 ms, karet ~270 ms, načtení celého stromu z disku ~670 ms.
 
 ## Architektura
 
@@ -254,3 +261,4 @@ výběr a pohled**:
 | `test_load_cache.py` | cache načítání pozná změnu na disku (i zvenčí); chybové cesty |
 | `test_stats.py` | statistiky: počty, `_completed`, odolnost vůči poškozeným datům |
 | `test_dialogs_filters.py` | dialogy se otevřou; uložené filtry přežijí uložení |
+| `test_undo_ops.py` | undo přejmenování, přesunu a mazání bez kopie workspace |
