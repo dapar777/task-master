@@ -208,7 +208,7 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
 Orientační čísla (medián, 750 úkolů, původní hodnoty v závorce): vytvoření
 podúkolu ~160 ms (4,1 s), přeuspořádání tažením ~160 ms (3,4 s), mazání ~240 ms
 (3,7 s), přesun ~250 ms (3,5 s), přejmenování ~280 ms (3,4 s), vložení ze
-schránky ~690 ms (4,0 s), překreslení stromu ~50 ms, karet ~270 ms.
+schránky ~270 ms (4,0 s), překreslení stromu ~50 ms, karet ~270 ms.
 
 ## Architektura
 

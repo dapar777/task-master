@@ -737,11 +737,12 @@ class MainWindow(QMainWindow):
             src = self.workspace.node_by_id(self._clip["src_id"])
             if src is not None:
                 src.delete()
+                if src in self.workspace.roots:  # kořen drží workspace
+                    self.workspace.roots.remove(src)
             self._clip = None  # vyjmutí je jednorázové
-        self.workspace.load()
-        # vyjmutí mění _id → úkoly blokované přesunutým osiřely, odblokuj je
-        if was_cut:
+            # vyjmutí mění _id → úkoly blokované přesunutým osiřely, odblokuj je
             self.workspace.resolve_orphan_blocks()
+        # bez load(): create_subtree i delete() paměťový strom udržely
         nn = self.workspace.node_by_id(new_id)
         if nn is not None:
             self._current_node = nn
@@ -777,7 +778,7 @@ class MainWindow(QMainWindow):
             created_ids.append(n.meta.get("_id"))
         # levný záznam místo kopie celého workspace: undo nové úkoly smaže
         self.undo.push_created(created_ids)
-        self.workspace.load()
+        # bez load(): create_subtree nové úkoly do paměťového stromu přidal
         if pos == "after" and cur_id:
             prev = self.workspace.node_by_id(cur_id)
             for cid in created_ids:
@@ -1680,9 +1681,9 @@ class MainWindow(QMainWindow):
                 if ref.parent is None:
                     self.workspace.move_to_root(dragged)
                 else:
-                    dragged.move_to(ref.parent.path)
+                    self.workspace.move_under(dragged, ref.parent)
                 self.undo.push_moved(old_path, str(dragged.path))
-                self.workspace.load()
+                # bez load(): move_under/move_to_root strom přepojily
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přesun selhal:\n{e}")
             return
