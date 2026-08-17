@@ -132,18 +132,23 @@ class TaskNode:
         metadat adresáře, takže odpadne stat() na každý podadresář. Na Windows
         je stat() drahý a při stovkách úkolů tvořil většinu času načítání.
         """
+        out = []
         try:
             with os.scandir(parent) as it:
-                entries = [e for e in it if e.is_dir()]
+                for e in it:
+                    # Chybu čti POLOŽKU PO POLOŽCE: jedna nedostupná složka
+                    # (zamčená, vadný symlink, výpadek síťové jednotky) nesmí
+                    # skrýt zdravé úkoly vedle ní – uživateli by zmizely.
+                    try:
+                        if not e.is_dir():
+                            continue
+                        p = Path(e.path)
+                        if (p / f"{e.name}.yaml").is_file():
+                            out.append(p)
+                    except OSError:
+                        continue
         except OSError:
             return []
-        out = []
-        for e in entries:
-            # existenci .yaml musíme ověřit; is_file() na scandir entry je
-            # levnější než Path.exists(), protože jde přímo na cachovaný typ
-            p = Path(e.path)
-            if (p / f"{e.name}.yaml").is_file():
-                out.append(p)
         out.sort(key=lambda p: p.name.lower())
         return out
 

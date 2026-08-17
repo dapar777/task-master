@@ -141,6 +141,70 @@ check("úklid nahlásil opravený úkol",
 check("úkol je zpět zpracovatelný",
       node("Alfa sub").meta.get("_status") == "todo")
 
+print("13) Chybové cesty: poškozený a prázdný YAML nepoloží načtení")
+broken = ws.create_root("Rozbity")
+ws.load()
+yp = node("Rozbity").yaml_path
+yp.write_text("{{{ neplatny: [yaml", encoding="utf-8")
+try:
+    ws.load()
+    check("poškozený YAML nepoložil load()", True)
+    check("úkol se načetl s výchozími metadaty",
+          node("Rozbity").meta.get("_status") == "todo")
+except Exception as e:  # noqa: BLE001
+    check(f"poškozený YAML nepoložil load() ({e})", False)
+yp.write_text("", encoding="utf-8")
+try:
+    ws.load()
+    check("prázdný YAML nepoložil load()", True)
+except Exception as e:  # noqa: BLE001
+    check(f"prázdný YAML nepoložil load() ({e})", False)
+node("Rozbity").delete()
+ws.load()
+
+print("14) Nedostupná položka neskryje zdravé úkoly vedle sebe")
+# zamčená složka, vadný symlink nebo výpadek síťové jednotky nesmí vést
+# k tomu, že uživateli zmizí i zdravé úkoly ve stejné složce
+real_scandir = os.scandir
+
+
+class _BadEntry:
+    name = "nedostupny"
+    path = str(tmp / "nedostupny")
+
+    def is_dir(self):
+        raise OSError("simulovaná chyba přístupu")
+
+
+class _FakeIt:
+    def __init__(self, good):
+        self.items = [_BadEntry()] + list(good)
+
+    def __enter__(self):
+        return iter(self.items)
+
+    def __exit__(self, *a):
+        return False
+
+
+def _fake_scandir(p):
+    with real_scandir(p) as g:
+        good = list(g)
+    return _FakeIt(good)
+
+
+healthy_before = {n.title for n in ws.roots}
+os.scandir = _fake_scandir
+try:
+    ws.load()
+    check("zdravé kořeny zůstaly viditelné",
+          {n.title for n in ws.roots} == healthy_before)
+finally:
+    os.scandir = real_scandir
+ws.load()
+check("po obnovení je stav v pořádku",
+      {n.title for n in ws.roots} == healthy_before)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
