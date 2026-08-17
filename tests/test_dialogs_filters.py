@@ -96,6 +96,21 @@ for i in range(4):
     ws.create_root(f"Ukol {i}")
 ws.load()
 
+# Zastínění vrať zpět, i když test spadne – jinak by v jednom procesu
+# ovlivnilo další sady (dialogy by se tiše přeskakovaly).
+_orig_box = {n: getattr(QMessageBox, n)
+             for n in ("question", "warning", "information")}
+_orig_exec = QDialog.exec
+
+
+def _restore_dialogs():
+    for n, fn in _orig_box.items():
+        setattr(QMessageBox, n, fn)
+    QDialog.exec = _orig_exec
+
+
+atexit.register(_restore_dialogs)
+
 for _name in ("question", "warning", "information"):
     setattr(QMessageBox, _name,
             staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
