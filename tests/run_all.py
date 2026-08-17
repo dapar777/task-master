@@ -20,6 +20,7 @@ TESTS = [
     ("test_cards_recycle.py", "recyklace karet nezobrazuje zastaralý obsah"),
     ("test_load_cache.py", "cache načítání pozná změnu na disku"),
     ("test_stats.py", "statistiky: počty, odolnost, nezávislost na recyklaci"),
+    ("test_dialogs_filters.py", "dialogy a uložené filtry"),
 ]
 
 

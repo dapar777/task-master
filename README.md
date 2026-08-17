@@ -253,3 +253,4 @@ výběr a pohled**:
 | `test_cards_recycle.py` | recyklace karet **nezobrazuje zastaralý** obsah |
 | `test_load_cache.py` | cache načítání pozná změnu na disku (i zvenčí); chybové cesty |
 | `test_stats.py` | statistiky: počty, `_completed`, odolnost vůči poškozeným datům |
+| `test_dialogs_filters.py` | dialogy se otevřou; uložené filtry přežijí uložení |
