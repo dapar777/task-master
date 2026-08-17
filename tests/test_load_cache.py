@@ -205,6 +205,34 @@ ws.load()
 check("po obnovení je stav v pořádku",
       {n.title for n in ws.roots} == healthy_before)
 
+print("15) Zápis do zmizelého adresáře nepoloží aplikaci")
+# adresář úkolu může zmizet za běhu (druhá instance, synchronizace, ruční
+# úklid); zápis musí selhat návratovou hodnotou, ne výjimkou
+ghost = ws.create_root("Duch")
+ws.load()
+ghost = node("Duch")
+shutil.rmtree(ghost.path)
+try:
+    ok_meta = ghost.save_meta()
+    check("save_meta nevyhodila výjimku", True)
+    check("save_meta ohlásila neúspěch", ok_meta is False)
+except Exception as e:  # noqa: BLE001
+    check(f"save_meta nevyhodila výjimku ({type(e).__name__})", False)
+try:
+    ok_body = ghost.write_body("neco")
+    check("write_body nevyhodila výjimku", True)
+    check("write_body ohlásila neúspěch", ok_body is False)
+except Exception as e:  # noqa: BLE001
+    check(f"write_body nevyhodila výjimku ({type(e).__name__})", False)
+try:
+    ghost.set_field("_status", "done")  # jde přes touch -> save_meta
+    check("set_field nevyhodilo výjimku", True)
+except Exception as e:  # noqa: BLE001
+    check(f"set_field nevyhodilo výjimku ({type(e).__name__})", False)
+ws.load()
+check("zmizelý úkol se po načtení neobjeví",
+      not any(n.title == "Duch" for n in ws.all_nodes()))
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

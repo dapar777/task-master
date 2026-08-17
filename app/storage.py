@@ -233,24 +233,42 @@ class TaskNode:
             self._has_body = bool(self.read_body().strip())
         return self._has_body
 
-    def write_body(self, text: str) -> None:
-        self.md_path.write_text(text or "", encoding="utf-8")
+    def write_body(self, text: str) -> bool:
+        """Zapíše popis. False = adresář úkolu už neexistuje (viz save_meta)."""
+        try:
+            self.md_path.write_text(text or "", encoding="utf-8")
+        except (FileNotFoundError, NotADirectoryError):
+            return False
         self._has_body = bool((text or "").strip())  # aktualizuj cache
         self.touch()
+        return True
 
     # ----- metadata -----
-    def save_meta(self) -> None:
-        with open(self.yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(
-                self.meta,
-                f,
-                allow_unicode=True,
-                sort_keys=False,
-                default_flow_style=False,
-            )
+    def save_meta(self) -> bool:
+        """Uloží metadata. Vrací False, když adresář úkolu už neexistuje.
+
+        Adresář může zmizet za běhu (druhá instance aplikace, synchronizace,
+        ruční úklid). Zápis do neexistujícího adresáře nesmí shodit aplikaci –
+        volající se o neúspěchu dozví z návratové hodnoty a úkol zmizí ze
+        zobrazení při nejbližším načtení. Ostatní chyby (práva, plný disk)
+        propouštíme dál, ať se neztratí tiše.
+        """
+        try:
+            with open(self.yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    self.meta,
+                    f,
+                    allow_unicode=True,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+        except (FileNotFoundError, NotADirectoryError):
+            self._stamp = None  # ať se uzel při dalším load() nerecykluje
+            return False
         # otisk musí odpovídat právě zapsanému stavu, jinak by se uzel při
         # dalším load() zbytečně přečetl znovu (nebo naopak vypadal zastarale)
         self._stamp = self._yaml_stamp()
+        return True
 
     def touch(self) -> None:
         self.meta["_modified"] = now_iso()
