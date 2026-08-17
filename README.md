@@ -178,6 +178,25 @@ Menu **Filtry**:
 
 Presety se ukládají do `%LOCALAPPDATA%\TaskMaster\Task Master\filters.json`.
 
+## Výkon
+
+Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
+
+- **`Workspace.load()`** přebuduje strukturu (cesty se mohou měnit), ale YAML
+  parsuje jen u úkolů se změněným otiskem (`mtime`, velikost). Nezměněné uzly
+  se recyklují i s odvozenými cache (`_has_body`), takže se nedopočítávají
+  z disku. Změna zvenčí (jiný proces, editor) se pozná.
+- **Výpis adresářů** jde přes jeden `os.scandir` průchod místo `stat()` na každý
+  podadresář – na Windows byl `stat()` většinou času načítání.
+- **Karty v Bez rušení** se při přebudování **recyklují**: widget se staví znovu
+  jen když se změnil jeho obsah (viz `_card_stamp`). Stavba karty i její layout
+  rostou s celkovým počtem úkolů, ne s počtem viditelných.
+- Karty se vytvářejí **s rodičem** a plnění běží s vypnutými aktualizacemi –
+  jinak Qt novou kartu na okamžik zobrazí jako samostatné okno mimo aplikaci.
+
+Orientační čísla (medián, 750 úkolů): překreslení stromu ~50 ms, karet ~270 ms
+(před optimalizací ~2,6 s), načtení celého stromu z disku ~670 ms.
+
 ## Architektura
 
 ```
@@ -231,3 +250,5 @@ výběr a pohled**:
 | `test_reparent_rename.py` | drag & drop a `F2` přes `MainWindow` nerozbalí cizí větve |
 | `test_cards_scroll.py` | Bez rušení: pohled skáče nahoru **jen** při odsunu aktivní karty |
 | `test_block_siblings.py` | blokování sourozenců i s podstromy; výjimky, undo, odblokování |
+| `test_cards_recycle.py` | recyklace karet **nezobrazuje zastaralý** obsah |
+| `test_load_cache.py` | cache načítání pozná změnu na disku (i zvenčí) |

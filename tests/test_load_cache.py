@@ -1,0 +1,99 @@
+"""Workspace.load() recykluje nezměněné uzly – nesmí ale zaspat změnu na disku.
+
+Uzel se z paměti přebírá jen když jeho YAML má stejný otisk (mtime, velikost).
+Zápis přes aplikaci otisk aktualizuje; zápis „zvenčí" (jiný proces, editor)
+musí vést k novému načtení.
+"""
+import atexit
+import os
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.storage import Workspace  # noqa: E402
+
+tmp = Path(tempfile.mkdtemp(prefix="tm_cache_"))
+atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
+
+fails = []
+
+
+def check(label, cond):
+    print(("  OK   " if cond else "  FAIL ") + label)
+    if not cond:
+        fails.append(label)
+
+
+ws = Workspace(tmp)
+ws.load()
+a = ws.create_root("Alfa")
+a.create_child("Alfa sub")
+ws.create_root("Beta")
+ws.load()
+
+node = lambda t: next(n for n in ws.all_nodes() if n.title == t)  # noqa: E731
+
+print("1) Beze změny na disku se uzly recyklují")
+ids_before = {n.title: id(n) for n in ws.all_nodes()}
+ws.load()
+ids_after = {n.title: id(n) for n in ws.all_nodes()}
+check("stejné instance uzlů", ids_before == ids_after)
+check("struktura zachována", len(list(ws.all_nodes())) == 3)
+check("podúkol má správného rodiče",
+      node("Alfa sub").parent is not None
+      and node("Alfa sub").parent.title == "Alfa")
+
+print("2) Zápis přes aplikaci se projeví (a uzel se recykluje)")
+node("Alfa").set_field("_priority", 9)
+ws.load()
+check("nová priorita je vidět", node("Alfa").meta.get("_priority") == 9)
+
+print("3) Změna zvenčí (jiný proces) se načte znovu")
+target = node("Beta")
+yaml_path = target.yaml_path
+time.sleep(0.01)  # ať se mtime prokazatelně liší
+txt = yaml_path.read_text(encoding="utf-8")
+yaml_path.write_text(txt.replace("_priority: 5", "_priority: 1"), encoding="utf-8")
+ws.load()
+check("změna zvenčí se načetla", node("Beta").meta.get("_priority") == 1)
+
+print("4) Nový úkol na disku se objeví")
+ws.create_root("Gama")
+ws.load()
+check("nový úkol je ve stromu",
+      any(n.title == "Gama" for n in ws.all_nodes()))
+
+print("5) Smazaný úkol zmizí")
+node("Gama").delete()
+ws.load()
+check("smazaný úkol je pryč",
+      not any(n.title == "Gama" for n in ws.all_nodes()))
+
+print("6) Přejmenování (změna cesty) se projeví")
+node("Beta").rename_dir("Beta nova")
+ws.load()
+check("nový název je ve stromu",
+      any(n.title == "Beta nova" for n in ws.all_nodes()))
+check("staré jméno je pryč",
+      not any(n.title == "Beta" for n in ws.all_nodes()))
+
+print("7) has_body cache přežije load() (kvůli tomu se recykluje)")
+n = node("Alfa")
+n.write_body("neco")
+ws.load()
+n = node("Alfa")
+check("has_body je True bez čtení z disku", n.has_body is True)
+check("cache je předplněná", getattr(n, "_has_body", None) is True)
+
+print("8) Prázdný popis se pozná taky")
+node("Alfa").write_body("   ")
+ws.load()
+check("prázdný popis -> has_body False", node("Alfa").has_body is False)
+
+print()
+print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
+sys.exit(1 if fails else 0)

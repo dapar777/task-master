@@ -211,6 +211,7 @@ class CardView(QScrollArea):
         self.vbox.addStretch(1)
         self.setWidget(self.container)
         self._cards: dict[str, CardWidget] = {}
+        self._stamps: dict[str, tuple] = {}  # otisk obsahu karty (recyklace)
         self._order: list[str] = []  # cesty v zobrazeném pořadí
         self._selected: set[str] = set()   # všechny označené cesty
         self._focus: str | None = None     # aktuální (fokus) karta
@@ -223,37 +224,14 @@ class CardView(QScrollArea):
     def populate(self, nodes, compact_fn=None) -> None:
         """Naplní karty. compact_fn(node) -> True pro úspornou (nižší) kartu."""
         vpos = self.verticalScrollBar().value()
-        while self.vbox.count():
-            item = self.vbox.takeAt(0)
-            w = item.widget()
-            if w is not None and w is not self._empty:
-                # okamžité odpojení: deleteLater() by widget nechal ve stromu
-                # potomků až do dalšího eventloopu → při rychlém překreslení
-                # (např. přepnutí úsporného režimu) prosvítají „duchové" karet
-                w.setParent(None)
-                w.deleteLater()
-            elif w is self._empty:
-                w.setParent(None)  # sdílený štítek jen vyjmi, nemaž
-        self._cards = {}
-        self._order = []
+        # Bez tohoto Qt překresluje po každé přidané kartě a nová karta bez
+        # rodiče na okamžik problikne jako samostatné okno mimo aplikaci.
+        self.container.setUpdatesEnabled(False)
+        try:
+            self._rebuild(nodes, compact_fn)
+        finally:
+            self.container.setUpdatesEnabled(True)
 
-        if not nodes:
-            self.vbox.addWidget(self._empty)
-            self.vbox.addStretch(1)
-            return
-
-        for node in nodes:
-            compact = bool(compact_fn(node)) if compact_fn else False
-            card = CardWidget(node, resolver=self.resolver, compact=compact)
-            card.selected.connect(self._on_card_clicked)
-            card.opened.connect(self.cardOpened)
-            card.statusToggled.connect(self.cardStatusToggled)
-            card.contextRequested.connect(self._on_card_context)
-            self.vbox.addWidget(card)  # roztáhne se na šířku okna
-            key = str(node.path)
-            self._cards[key] = card
-            self._order.append(key)
-        self.vbox.addStretch(1)
         # znovu použij výběr na nově vytvořené karty (zachovaly se jen existující)
         self._selected = {p for p in self._selected if p in self._cards}
         if self._focus not in self._cards:
@@ -263,6 +241,86 @@ class CardView(QScrollArea):
         # nemají geometrii, takže scrollbar má rozsah 0 a okamžitý zápis
         # (i ensureWidgetVisible) by pohled srazil nahoru.
         QTimer.singleShot(0, lambda v=vpos: self._restore_scroll(v))
+
+    def _card_stamp(self, node, compact: bool):
+        """Otisk všeho, co karta vykresluje – shoda = widget lze recyklovat."""
+        blocker = None
+        if node.blocked_by and self.resolver:
+            b = self.resolver(node.blocked_by)
+            blocker = b.title if b else ""
+        return (
+            node.title, node.flag, node.has_body, compact,
+            node.meta.get("_status"), node.meta.get("_priority"),
+            node.meta.get("_category"), tuple(node.meta.get("_tags") or ()),
+            node.blocked_by, node.auto_blocked, blocker,
+            len(node.links), len(node.refs), node.order,
+            _incomplete_subtasks(node),
+        )
+
+    def _new_card(self, node, compact: bool) -> "CardWidget":
+        # rodič HNED v konstruktoru – widget bez rodiče je top-level okno,
+        # které Qt stihne zobrazit dřív, než ho addWidget vloží do layoutu
+        card = CardWidget(node, parent=self.container,
+                          resolver=self.resolver, compact=compact)
+        card.selected.connect(self._on_card_clicked)
+        card.opened.connect(self.cardOpened)
+        card.statusToggled.connect(self.cardStatusToggled)
+        card.contextRequested.connect(self._on_card_context)
+        return card
+
+    def _rebuild(self, nodes, compact_fn) -> None:
+        """Přestaví seznam karet, ale recykluje ty, které se nezměnily.
+
+        Stavba karty i její layout jsou drahé a rostou s celkovým počtem úkolů,
+        ne s počtem viditelných. Většina přebudování (změna stavu, editace,
+        přidání úkolu) přitom nechá skoro všechny karty beze změny – ty se jen
+        znovu zařadí do layoutu místo zahození a nové konstrukce.
+        """
+        old_cards = self._cards
+        old_stamps = getattr(self, "_stamps", {})
+
+        # vyjmi vše z layoutu; widgety si drž (rozhodnutí padne až podle otisku)
+        while self.vbox.count():
+            item = self.vbox.takeAt(0)
+            w = item.widget()
+            if w is self._empty:
+                w.setParent(None)  # sdílený štítek jen vyjmi, nemaž
+
+        self._cards = {}
+        self._order = []
+        self._stamps = {}
+
+        if not nodes:
+            for card in old_cards.values():
+                card.setParent(None)
+                card.deleteLater()
+            self.vbox.addWidget(self._empty)
+            self.vbox.addStretch(1)
+            return
+
+        for node in nodes:
+            compact = bool(compact_fn(node)) if compact_fn else False
+            key = str(node.path)
+            stamp = self._card_stamp(node, compact)
+            card = old_cards.pop(key, None)
+            if card is None or old_stamps.get(key) != stamp:
+                if card is not None:
+                    card.setParent(None)  # obsah se změnil – postav znovu
+                    card.deleteLater()
+                card = self._new_card(node, compact)
+            else:
+                card.node = node  # po load() je uzel nová instance
+            self.vbox.addWidget(card)  # roztáhne se na šířku okna
+            self._cards[key] = card
+            self._order.append(key)
+            self._stamps[key] = stamp
+        self.vbox.addStretch(1)
+
+        # co zbylo, ve zobrazení už není – okamžité odpojení, aby po zbytek
+        # eventloopu neprosvítali „duchové" karet
+        for card in old_cards.values():
+            card.setParent(None)
+            card.deleteLater()
 
     def _restore_scroll(self, vpos: int) -> None:
         """Vrať pohled tam, kde byl – přebudování samo o sobě nesmí rolovat.

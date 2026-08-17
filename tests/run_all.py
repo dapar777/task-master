@@ -17,6 +17,8 @@ TESTS = [
     ("test_reparent_rename.py", "drag & drop a F2 přes MainWindow"),
     ("test_cards_scroll.py", "Bez rušení: pohled skáče nahoru jen při odsunu aktivní karty"),
     ("test_block_siblings.py", "blokování sourozenců i s jejich podúkoly"),
+    ("test_cards_recycle.py", "recyklace karet nezobrazuje zastaralý obsah"),
+    ("test_load_cache.py", "cache načítání pozná změnu na disku"),
 ]
 
 

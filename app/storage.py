@@ -16,6 +16,7 @@ Podadresáře jsou podúkoly (rekurzivně).
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import uuid
@@ -123,7 +124,43 @@ class TaskNode:
     def is_task_dir(path: Path) -> bool:
         return path.is_dir() and (path / f"{path.name}.yaml").exists()
 
+    @staticmethod
+    def task_dirs(parent: Path) -> list[Path]:
+        """Adresáře úkolů uvnitř `parent`, seřazené podle jména.
+
+        Používá jeden průchod os.scandir – ten vrací typ položky z už načtených
+        metadat adresáře, takže odpadne stat() na každý podadresář. Na Windows
+        je stat() drahý a při stovkách úkolů tvořil většinu času načítání.
+        """
+        try:
+            with os.scandir(parent) as it:
+                entries = [e for e in it if e.is_dir()]
+        except OSError:
+            return []
+        out = []
+        for e in entries:
+            # existenci .yaml musíme ověřit; is_file() na scandir entry je
+            # levnější než Path.exists(), protože jde přímo na cachovaný typ
+            p = Path(e.path)
+            if (p / f"{e.name}.yaml").is_file():
+                out.append(p)
+        out.sort(key=lambda p: p.name.lower())
+        return out
+
     # ----- načítání -----
+    def _yaml_stamp(self):
+        """(mtime, velikost) YAML souboru – otisk pro rozpoznání změny na disku."""
+        try:
+            st = self.yaml_path.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def is_fresh(self) -> bool:
+        """Souhlasí meta v paměti s tím, co je na disku? (viz Workspace.load)"""
+        stamp = getattr(self, "_stamp", None)
+        return stamp is not None and stamp == self._yaml_stamp()
+
     def _load_meta(self) -> None:
         if self.yaml_path.exists():
             try:
@@ -133,6 +170,7 @@ class TaskNode:
                     self.meta = data
             except Exception:
                 self.meta = {}
+        self._stamp = self._yaml_stamp()
         # doplnění chybějících klíčů
         base = default_meta(self.name)
         for k, v in base.items():
@@ -144,18 +182,15 @@ class TaskNode:
         if isinstance(p, str):
             self.meta["_priority"] = LEGACY_PRIORITY.get(p, DEFAULT_PRIORITY)
 
-    def load_children(self) -> None:
+    def load_children(self, prev: dict | None = None) -> None:
+        """Načte podúkoly; `prev` (cesta -> uzel) umožní recyklaci nezměněných."""
         self.children = []
-        try:
-            entries = sorted(
-                [p for p in self.path.iterdir() if TaskNode.is_task_dir(p)],
-                key=lambda p: p.name.lower(),
-            )
-        except OSError:
-            entries = []
-        for p in entries:
-            child = TaskNode(p, parent=self)
-            child.load_children()
+        for p in TaskNode.task_dirs(self.path):
+            if prev is not None:
+                child = Workspace._node_for(p, self, prev)
+            else:
+                child = TaskNode(p, parent=self)
+            child.load_children(prev)
             self.children.append(child)
 
     # ----- tělo (markdown) -----
@@ -208,6 +243,9 @@ class TaskNode:
                 sort_keys=False,
                 default_flow_style=False,
             )
+        # otisk musí odpovídat právě zapsanému stavu, jinak by se uzel při
+        # dalším load() zbytečně přečetl znovu (nebo naopak vypadal zastarale)
+        self._stamp = self._yaml_stamp()
 
     def touch(self) -> None:
         self.meta["_modified"] = now_iso()
@@ -454,16 +492,31 @@ class Workspace:
         self.roots: list[TaskNode] = []
 
     def load(self) -> list[TaskNode]:
+        """Načte strom z disku; nezměněné úkoly se berou z paměti.
+
+        Struktura se přebuduje pokaždé (cesty se mohou měnit přejmenováním či
+        přesunem), ale YAML se znovu parsuje jen tam, kde se změnil čas úpravy.
+        Uzel se tak recykluje i s odvozenými cache (např. `_has_body`), které by
+        se jinak při každém načtení zahodily a musely se dopočítávat z disku.
+        """
+        prev = {str(n.path): n for n in self.all_nodes()}
         self.roots = []
-        for p in sorted(
-            [p for p in self.root.iterdir() if TaskNode.is_task_dir(p)],
-            key=lambda p: p.name.lower(),
-        ):
-            node = TaskNode(p)
-            node.load_children()
+        for p in TaskNode.task_dirs(self.root):
+            node = self._node_for(p, None, prev)
+            node.load_children(prev)
             self.roots.append(node)
         self.normalize_orders()
         return self.roots
+
+    @staticmethod
+    def _node_for(path: Path, parent, prev: dict) -> TaskNode:
+        """Vrátí uzel pro cestu – recyklovaný z `prev`, když je YAML beze změny."""
+        old = prev.get(str(path))
+        if old is not None and old.is_fresh():
+            old.parent = parent
+            old.children = []
+            return old
+        return TaskNode(path, parent=parent)
 
     def normalize_orders(self) -> None:
         """Zajistí GLOBÁLNĚ jedinečné pořadí (float) napříč všemi úkoly.
