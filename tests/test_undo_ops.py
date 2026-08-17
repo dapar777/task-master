@@ -165,6 +165,71 @@ app.processEvents()
 check(f"undo vložený úkol odebralo ({len(titles())})",
       len(titles()) == before)
 
+print("7) Paměťový strom zůstává v souladu s diskem (bez load())")
+# Přejmenování, přesun a mazání už nenačítají celý workspace z disku –
+# udržují paměťový strom samy. Kdyby se rozešly, aplikace by pracovala
+# s neexistujícími cestami.
+from app.storage import TaskNode  # noqa: E402
+
+
+def disk_paths(root: Path) -> set:
+    out = set()
+
+    def walk(d):
+        for p, _stamp in TaskNode.scan_dir(d):
+            out.add(str(p))
+            walk(p)
+
+    walk(root)
+    return out
+
+
+def memory_paths() -> set:
+    return {str(n.path) for n in win.workspace.all_nodes()}
+
+
+def consistent(label) -> bool:
+    mem, dsk = memory_paths(), disk_paths(Path(tmp))
+    ok = mem == dsk
+    check(f"{label} (paměť {len(mem)} = disk {len(dsk)})", ok)
+    return ok
+
+
+win.workspace.load()
+win._populate()
+app.processEvents()
+consistent("výchozí stav")
+
+par = win.workspace.create_root("Rodic")
+win.workspace.create_child_of(par, "Potomek")
+win.workspace.load()
+win._populate()
+app.processEvents()
+
+win._on_rename(node("Rodic"), "Rodic PREJMENOVANY")
+app.processEvents()
+consistent("po přejmenování s podúkolem")
+kid = node("Potomek")
+check("podúkol má aktualizovanou cestu",
+      kid is not None and "PREJMENOVANY" in str(kid.path).upper())
+
+win.workspace.create_root("Cilovy")
+win.workspace.load()
+win._populate()
+app.processEvents()
+win._on_reparent(node("Rodic PREJMENOVANY"), node("Cilovy"))
+app.processEvents()
+consistent("po přesunu podstromu")
+
+win._current_node = node("Cilovy")
+win._delete_task()
+app.processEvents()
+consistent("po smazání podstromu")
+
+win._undo()
+app.processEvents()
+consistent("po undo")
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

@@ -196,15 +196,19 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
 - **Pořadí úkolů** (`_order`) je globálně jedinečné už při vzniku. Kolize by
   přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
   zneplatní otisky karet a vynutí jejich kompletní přestavbu.
+- **Strukturální operace nenačítají celý strom.** Přejmenování, přesun i mazání
+  udržují paměťový strom samy (`_rebase_children`, `move_under`), takže odpadá
+  `load()` přes všechny úkoly. Načítá se jen tam, kde se disk změnil zvenčí
+  (F5, undo obnovující zálohu).
 - **Undo** nekopíruje celý workspace: přejmenování a přesun ukládají jen cesty
   (`moved`), mazání zálohuje jen mazané podstromy (`deleted`), přeuspořádání
   jen metadata (`fields`) a vkládání jen id nových úkolů (`created`). Kopie
   celého prostoru (`snapshot`) zůstává jen jako fallback.
 
-Orientační čísla (medián, 750 úkolů, dřívější hodnoty v závorce): vytvoření
-podúkolu ~160 ms (4,1 s), přeuspořádání tažením ~160 ms (3,4 s), vložení ze
-schránky ~690 ms (4,0 s), přejmenování / přesun / mazání ~0,7–1 s (~3,5 s),
-překreslení stromu ~50 ms, karet ~270 ms, načtení stromu z disku ~670 ms.
+Orientační čísla (medián, 750 úkolů, původní hodnoty v závorce): vytvoření
+podúkolu ~160 ms (4,1 s), přeuspořádání tažením ~160 ms (3,4 s), mazání ~240 ms
+(3,7 s), přesun ~250 ms (3,5 s), přejmenování ~280 ms (3,4 s), vložení ze
+schránky ~690 ms (4,0 s), překreslení stromu ~50 ms, karet ~270 ms.
 
 ## Architektura
 

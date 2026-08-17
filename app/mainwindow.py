@@ -863,9 +863,11 @@ class MainWindow(QMainWindow):
         self.undo.push_deleted([n.path for n in targets])
         for n in targets:
             n.delete()
+            if n in self.workspace.roots:  # kořenový úkol drží workspace
+                self.workspace.roots.remove(n)
         self._current_node = None
         self.detail.load(None)
-        self.workspace.load()
+        # bez load(): delete() uzel z paměťového stromu odebral
         # úkoly blokované smazanými osiřely – odblokuj je (jinak uvíznou navždy)
         orphaned = self.workspace.resolve_orphan_blocks()
         self._populate()
@@ -897,7 +899,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Chyba", f"Přejmenování selhalo:\n{e}")
         self.undo.push_moved(old_path, str(node.path), old_meta)
         new_path = str(node.path)
-        self.workspace.load()
+        # bez load(): rename_dir aktualizoval cesty uzlu i potomků v paměti
         self._populate()
         self._select_path_in_view(new_path)
 
@@ -909,13 +911,13 @@ class MainWindow(QMainWindow):
             if new_parent is None:
                 self.workspace.move_to_root(node)
             else:
-                node.move_to(new_parent.path)
+                self.workspace.move_under(node, new_parent)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, "Chyba", f"Přesun selhal:\n{e}")
             return
         self.undo.push_moved(old_path, str(node.path))
         new_path = str(node.path)
-        self.workspace.load()
+        # bez load(): move_under přepojil uzel i cesty potomků v paměti
         self._populate()
         self._select_path_in_view(new_path)
 

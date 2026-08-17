@@ -125,32 +125,49 @@ class TaskNode:
         return path.is_dir() and (path / f"{path.name}.yaml").exists()
 
     @staticmethod
-    def task_dirs(parent: Path) -> list[Path]:
-        """Adresáře úkolů uvnitř `parent`, seřazené podle jména.
+    def scan_dir(parent: Path) -> list[tuple[Path, tuple | None]]:
+        """[(cesta úkolu, otisk jeho .yaml)] uvnitř `parent`, seřazené dle jména.
 
-        Používá jeden průchod os.scandir – ten vrací typ položky z už načtených
-        metadat adresáře, takže odpadne stat() na každý podadresář. Na Windows
-        je stat() drahý a při stovkách úkolů tvořil většinu času načítání.
+        Jediný průchod os.scandir na adresář ÚKOLU vrátí i jeho obsah, takže
+        z něj rovnou vyzobneme otisk (mtime, velikost) .yaml souboru. Bez toho
+        by na každý úkol padly dva další stat() – jeden na ověření existence
+        .yaml a druhý na otisk. Na Windows je stat() drahý a při stovkách úkolů
+        tvořil většinu času načítání.
         """
         out = []
         try:
             with os.scandir(parent) as it:
-                for e in it:
-                    # Chybu čti POLOŽKU PO POLOŽCE: jedna nedostupná složka
-                    # (zamčená, vadný symlink, výpadek síťové jednotky) nesmí
-                    # skrýt zdravé úkoly vedle ní – uživateli by zmizely.
-                    try:
-                        if not e.is_dir():
-                            continue
-                        p = Path(e.path)
-                        if (p / f"{e.name}.yaml").is_file():
-                            out.append(p)
-                    except OSError:
-                        continue
+                entries = list(it)
         except OSError:
             return []
-        out.sort(key=lambda p: p.name.lower())
+        for e in entries:
+            # Chybu čti POLOŽKU PO POLOŽCE: jedna nedostupná složka (zamčená,
+            # vadný symlink, výpadek síťové jednotky) nesmí skrýt zdravé úkoly
+            # vedle ní – uživateli by zmizely.
+            try:
+                if not e.is_dir():
+                    continue
+                yaml_name = f"{e.name}.yaml"
+                stamp = None
+                found = False
+                with os.scandir(e.path) as inner:
+                    for f in inner:
+                        if f.name == yaml_name and f.is_file():
+                            found = True
+                            st = f.stat()
+                            stamp = (st.st_mtime_ns, st.st_size)
+                            break
+                if found:
+                    out.append((Path(e.path), stamp))
+            except OSError:
+                continue
+        out.sort(key=lambda t: t[0].name.lower())
         return out
+
+    @staticmethod
+    def task_dirs(parent: Path) -> list[Path]:
+        """Adresáře úkolů uvnitř `parent` (bez otisků) – viz scan_dir."""
+        return [p for p, _ in TaskNode.scan_dir(parent)]
 
     # ----- načítání -----
     def _yaml_stamp(self):
@@ -190,9 +207,9 @@ class TaskNode:
     def load_children(self, prev: dict | None = None) -> None:
         """Načte podúkoly; `prev` (cesta -> uzel) umožní recyklaci nezměněných."""
         self.children = []
-        for p in TaskNode.task_dirs(self.path):
+        for p, stamp in TaskNode.scan_dir(self.path):
             if prev is not None:
-                child = Workspace._node_for(p, self, prev)
+                child = Workspace._node_for(p, self, prev, stamp)
             else:
                 child = TaskNode(p, parent=self)
             child.load_children(prev)
@@ -420,6 +437,7 @@ class TaskNode:
         dest = new_parent_dir / dest_base
         shutil.move(str(self.path), str(dest))
         self.path = dest
+        self._rebase_children()  # potomci jdou s ním – viz _rebase_children
 
     def rename_dir(self, new_title: str) -> None:
         """Přejmenuje adresář i soubory podle nového titulku a uloží titulek."""
@@ -438,8 +456,19 @@ class TaskNode:
                 old_yaml.rename(tmp_yaml)
             self.path.rename(new_path)
             self.path = new_path
+            self._rebase_children()
         self.meta["_title"] = new_title
         self.touch()
+
+    def _rebase_children(self) -> None:
+        """Přepočítá cesty potomků po změně cesty tohoto uzlu.
+
+        Bez toho by podúkoly ukazovaly na starý adresář a volající by musel
+        načíst celý strom z disku – což je při stovkách úkolů znát.
+        """
+        for c in self.children:
+            c.path = self.path / c.path.name
+            c._rebase_children()
 
     # ----- pomocné -----
     def iter_descendants(self):
@@ -533,18 +562,22 @@ class Workspace:
         """
         prev = {str(n.path): n for n in self.all_nodes()}
         self.roots = []
-        for p in TaskNode.task_dirs(self.root):
-            node = self._node_for(p, None, prev)
+        for p, stamp in TaskNode.scan_dir(self.root):
+            node = self._node_for(p, None, prev, stamp)
             node.load_children(prev)
             self.roots.append(node)
         self.normalize_orders()
         return self.roots
 
     @staticmethod
-    def _node_for(path: Path, parent, prev: dict) -> TaskNode:
-        """Vrátí uzel pro cestu – recyklovaný z `prev`, když je YAML beze změny."""
+    def _node_for(path: Path, parent, prev: dict, stamp=None) -> TaskNode:
+        """Vrátí uzel pro cestu – recyklovaný z `prev`, když je YAML beze změny.
+
+        `stamp` je otisk z už provedeného scandir průchodu; bez něj by si
+        is_fresh() musel vyžádat další stat() na každý úkol.
+        """
         old = prev.get(str(path))
-        if old is not None and old.is_fresh():
+        if old is not None and getattr(old, "_stamp", None) == stamp and stamp is not None:
             old.parent = parent
             old.children = []
             return old
@@ -613,9 +646,26 @@ class Workspace:
     def move_to_root(self, node: TaskNode) -> None:
         if node.parent and node in node.parent.children:
             node.parent.children.remove(node)
+        else:
+            if node in self.roots:
+                self.roots.remove(node)
         node.move_to(self.root)
         node.parent = None
         self.roots.append(node)
+
+    def move_under(self, node: TaskNode, new_parent: TaskNode) -> None:
+        """Přesune úkol pod jiný a rovnou přepojí i paměťový strom.
+
+        Volající pak nemusí načítat celý workspace z disku – cesty potomků
+        srovná move_to() a rodičovské vazby tahle metoda.
+        """
+        if node.parent and node in node.parent.children:
+            node.parent.children.remove(node)
+        elif node in self.roots:
+            self.roots.remove(node)
+        node.move_to(new_parent.path)
+        node.parent = new_parent
+        new_parent.children.append(node)
 
     # ----- agregace pro filtry -----
     def all_nodes(self):
