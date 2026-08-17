@@ -19,6 +19,7 @@ TESTS = [
     ("test_block_siblings.py", "blokování sourozenců i s jejich podúkoly"),
     ("test_cards_recycle.py", "recyklace karet nezobrazuje zastaralý obsah"),
     ("test_load_cache.py", "cache načítání pozná změnu na disku"),
+    ("test_stats.py", "statistiky: počty, odolnost, nezávislost na recyklaci"),
 ]
 
 

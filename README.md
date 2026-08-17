@@ -251,4 +251,5 @@ výběr a pohled**:
 | `test_cards_scroll.py` | Bez rušení: pohled skáče nahoru **jen** při odsunu aktivní karty |
 | `test_block_siblings.py` | blokování sourozenců i s podstromy; výjimky, undo, odblokování |
 | `test_cards_recycle.py` | recyklace karet **nezobrazuje zastaralý** obsah |
-| `test_load_cache.py` | cache načítání pozná změnu na disku (i zvenčí) |
+| `test_load_cache.py` | cache načítání pozná změnu na disku (i zvenčí); chybové cesty |
+| `test_stats.py` | statistiky: počty, `_completed`, odolnost vůči poškozeným datům |
