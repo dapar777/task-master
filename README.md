@@ -193,7 +193,6 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
   rostou s celkovým počtem úkolů, ne s počtem viditelných.
 - Karty se vytvářejí **s rodičem** a plnění běží s vypnutými aktualizacemi –
   jinak Qt novou kartu na okamžik zobrazí jako samostatné okno mimo aplikaci.
-
 - **Pořadí úkolů** (`_order`) je globálně jedinečné už při vzniku. Kolize by
   přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
   zneplatní otisky karet a vynutí jejich kompletní přestavbu.
