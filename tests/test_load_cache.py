@@ -117,6 +117,30 @@ check("uzel se recykloval", id(node("Alfa")) == before_id)
 check("metadata odpovídají disku",
       node("Alfa").meta.get("_priority") == 8)
 
+print("11) Vazby podle _id přežijí recyklaci")
+# _id se drží v meta, takže recyklovaný uzel ho musí mít pořád stejné –
+# jinak by se rozpadly odkazy mezi úkoly i blokující vazby
+src, dst = node("Alfa"), node("Beta nova")
+dst_id = dst.task_id
+src.add_ref(dst_id)
+ws.load()
+src = node("Alfa")
+check("odkaz na úkol zůstal", dst_id in src.refs)
+check("node_by_id odkaz rozřeší",
+      ws.node_by_id(dst_id) is not None
+      and ws.node_by_id(dst_id).title == "Beta nova")
+
+print("12) Osiřelá blokující vazba se uklidí i po recyklaci")
+victim = node("Alfa sub")
+victim.set_field("_status", "blocked")
+victim.set_blocked_by("neexistujici-id-12345")
+ws.load()
+fixed = ws.resolve_orphan_blocks()
+check("úklid nahlásil opravený úkol",
+      any(n.title == "Alfa sub" for n in fixed))
+check("úkol je zpět zpracovatelný",
+      node("Alfa sub").meta.get("_status") == "todo")
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
