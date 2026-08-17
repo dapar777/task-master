@@ -209,7 +209,16 @@ python tests/run_all.py
 ```
 
 Testy běží **headless** (Qt offscreen) nad **dočasným workspace** – na `workspace/`
-ani na uložené nastavení aplikace nesahají. Pokrývají chování, které se snadno
+ani na uložené nastavení aplikace nesahají.
+
+> **Pozor při psaní dalších testů:** `MainWindow` si dělá
+> `QSettings(ORG_NAME, APP_NAME)` **natvrdo**, takže `QApplication.setOrganizationName()`
+> ho neizoluje. Každý test, který vytváří `MainWindow`, musí klíč `workspace`
+> v tomto úložišti přesměrovat do dočasného adresáře a původní hodnoty vrátit
+> (viz `atexit` v testech) – jinak si okno načte **reálná data uživatele** a
+> přepíše v nich metadata.
+
+Testy pokrývají chování, které se snadno
 rozbije při úpravách překreslování stromu i karet – **kam se po akci podívá
 výběr a pohled**:
 
