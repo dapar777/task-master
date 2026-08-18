@@ -191,6 +191,13 @@ class MainWindow(QMainWindow):
         td = self._make("task.toggle_done", self._toggle_done, target=self.tree)
         td.setAutoRepeat(False)
         self.card_view.addAction(td)
+        # stavy jako příkazy – kvůli paletě a volitelné zkratce (Hotovo má
+        # vlastní přepínač Ctrl+Enter, proto tu není)
+        for _key in ("todo", "in_progress", "waiting", "blocked"):
+            a = self._make(f"task.status_{_key}",
+                           lambda _c=False, k=_key: self._set_status_current(k))
+            a.setAutoRepeat(False)
+            self.card_view.addAction(a)
         # zablokovat sourozence vybraným úkolem (strom i karty)
         bs = self._make("task.block_siblings", self._block_siblings)
         bs.setAutoRepeat(False)
@@ -870,6 +877,14 @@ class MainWindow(QMainWindow):
         sub = QMenu("Stav", parent_menu)
         self._add_status_actions(sub, node)
         return sub
+
+    def _set_status_current(self, status: str) -> None:
+        """Stav aktuálního úkolu – z palety nebo přiřazené zkratky."""
+        node = self._current_node
+        if node is None:
+            self.status.showMessage("Není vybraný úkol", 1500)
+            return
+        self._set_status_from_card(node, status)
 
     def _set_status_from_card(self, node, status: str) -> None:
         """Stav z kontextového menu karty; na vícevýběr, je-li v něm i `node`."""

@@ -175,6 +175,35 @@ acts = win._m_status.actions()
 check("bez vybraného úkolu je položka zašedlá",
       len(acts) == 1 and not acts[0].isEnabled())
 
+print("8) Stavy jsou i příkazy (paleta, volitelná zkratka)")
+from app.shortcuts import COMMAND_DEFS  # noqa: E402
+
+cmds = [c for c in COMMAND_DEFS if c.startswith("task.status_")]
+check("existují 4 stavové příkazy", len(cmds) == 4)
+check("všechny jsou zaregistrované v okně",
+      all(c in win.act for c in cmds))
+check("mají prázdnou výchozí zkratku (bez kolizí)",
+      all(COMMAND_DEFS[c][2] == "" for c in cmds))
+
+win._view_mode = "cards"
+win._populate()
+app.processEvents()
+win._current_node = node("Alfa")
+win.act["task.status_in_progress"].trigger()
+app.processEvents()
+QTest.qWait(60)
+app.processEvents()
+check("příkaz nastavil stav",
+      node("Alfa").meta.get("_status") == "in_progress")
+
+win._current_node = None
+try:
+    win.act["task.status_todo"].trigger()
+    app.processEvents()
+    check("bez vybraného úkolu příkaz nespadne", True)
+except Exception as e:  # noqa: BLE001
+    check(f"bez vybraného úkolu nespadne ({type(e).__name__})", False)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
