@@ -196,10 +196,11 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
 - **Pořadí úkolů** (`_order`) je globálně jedinečné už při vzniku. Kolize by
   přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
   zneplatní otisky karet a vynutí jejich kompletní přestavbu.
-- **Strukturální operace nenačítají celý strom.** Přejmenování, přesun i mazání
-  udržují paměťový strom samy (`_rebase_children`, `move_under`), takže odpadá
-  `load()` přes všechny úkoly. Načítá se jen tam, kde se disk změnil zvenčí
-  (F5, undo obnovující zálohu).
+- **Strukturální operace nenačítají celý strom.** Přejmenování, přesun, mazání,
+  vkládání i přeuspořádání udržují paměťový strom samy (`_rebase_children`,
+  `move_under`, `create_subtree`), takže odpadá `load()` přes všechny úkoly.
+  Načítá se jen tam, kde se disk mohl změnit zvenčí: otevření prostoru, `F5`
+  a undo obnovující zálohu.
 - **Undo** nekopíruje celý workspace: přejmenování a přesun ukládají jen cesty
   (`moved`), mazání zálohuje jen mazané podstromy (`deleted`), přeuspořádání
   jen metadata (`fields`) a vkládání jen id nových úkolů (`created`). Kopie
