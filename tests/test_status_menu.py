@@ -145,6 +145,36 @@ sub = win._build_status_menu(node("Gama"), None)
 check("podnabídka jde sestavit i pro strom", sub is not None)
 check("má všech 5 stavů", len(sub.actions()) == len(STATUSES))
 
+print("7) Podnabídka Stav je i v hlavním menu Úkol")
+# hlavní menu se staví jednou při startu, položky se plní až při rozbalení
+win._current_node = node("Gama")
+win._m_status.aboutToShow.emit()
+app.processEvents()
+main_labels = [a.text() for a in win._m_status.actions()]
+check("hlavní menu nabízí všech 5 stavů",
+      sorted(main_labels) == sorted(STATUSES.values()))
+check("zaškrtnutý je aktuální stav Gamy",
+      [a.text() for a in win._m_status.actions() if a.isChecked()]
+      == [STATUSES[node("Gama").meta.get("_status")]])
+
+win._set_status_from_card(node("Gama"), "in_progress")
+app.processEvents()
+QTest.qWait(60)
+app.processEvents()
+win._current_node = node("Gama")
+win._m_status.aboutToShow.emit()
+app.processEvents()
+check("zaškrtnutí sleduje změnu stavu",
+      [a.text() for a in win._m_status.actions() if a.isChecked()]
+      == [STATUSES["in_progress"]])
+
+win._current_node = None
+win._m_status.aboutToShow.emit()
+app.processEvents()
+acts = win._m_status.actions()
+check("bez vybraného úkolu je položka zašedlá",
+      len(acts) == 1 and not acts[0].isEnabled())
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

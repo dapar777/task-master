@@ -265,6 +265,9 @@ class MainWindow(QMainWindow):
         m_task.addAction(self.act["task.priority_down"])
         m_task.addAction(self.act["task.flag"])
         m_task.addAction(self.act["task.toggle_done"])
+        # podnabídka stavů – naplní se až při rozbalení, podle aktuálního úkolu
+        self._m_status = m_task.addMenu("Stav")
+        self._m_status.aboutToShow.connect(self._fill_status_menu)
         m_task.addAction(self.act["task.block_siblings"])
 
         m_view = mb.addMenu("&Zobrazení")
@@ -832,6 +835,31 @@ class MainWindow(QMainWindow):
                 menu.addAction(self.act[cid])
         return menu
 
+    def _fill_status_menu(self) -> None:
+        """Naplní podnabídku Stav v hlavním menu podle aktuálního úkolu.
+
+        Hlavní menu se staví jednou při startu, takže se položky musí obnovit
+        při každém rozbalení – jinak by zaškrtnutí ukazovalo starý stav.
+        """
+        self._m_status.clear()
+        node = self._current_node
+        if node is None:
+            act = self._m_status.addAction("(není vybrán úkol)")
+            act.setEnabled(False)
+            return
+        self._add_status_actions(self._m_status, node)
+
+    def _add_status_actions(self, menu: QMenu, node) -> None:
+        """Položky se stavy do `menu`; aktuální stav je zaškrtnutý."""
+        current = node.meta.get("_status", "")
+        for key in STATUS_ORDER:
+            act = menu.addAction(STATUSES[key])
+            act.setCheckable(True)
+            act.setChecked(key == current)
+            act.triggered.connect(
+                lambda _checked=False, k=key, n=node: self._set_status_from_card(n, k)
+            )
+
     def _build_status_menu(self, node, parent_menu) -> QMenu:
         """Podnabídka „Stav" – umožní nastavit stav i mimo strom (Bez rušení).
 
@@ -840,14 +868,7 @@ class MainWindow(QMainWindow):
         u úkolu s nedokončenými podúkoly zeptá – obojí řeší _apply_status_to.
         """
         sub = QMenu("Stav", parent_menu)
-        current = node.meta.get("_status", "")
-        for key in STATUS_ORDER:
-            act = sub.addAction(STATUSES[key])
-            act.setCheckable(True)
-            act.setChecked(key == current)
-            act.triggered.connect(
-                lambda _checked=False, k=key, n=node: self._set_status_from_card(n, k)
-            )
+        self._add_status_actions(sub, node)
         return sub
 
     def _set_status_from_card(self, node, status: str) -> None:
