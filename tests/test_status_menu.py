@@ -204,6 +204,31 @@ try:
 except Exception as e:  # noqa: BLE001
     check(f"bez vybraného úkolu nespadne ({type(e).__name__})", False)
 
+print("9) Přechod na Blokováno = jeden undo záznam")
+# _apply_status_to zálohuje metadata a _ask_blocker to dělal znovu – jedno
+# Ctrl+Z pak jen zrušilo vazbu a stav zůstal, takže bylo potřeba mačkat víc
+win._view_mode = "cards"
+win._populate()
+app.processEvents()
+target = node("Beta")
+win._set_status_from_card(target, "todo")
+app.processEvents()
+QTest.qWait(60)
+app.processEvents()
+before_entries = len(win.undo.entries)
+win._set_status_from_card(target, "blocked")
+app.processEvents()
+QTest.qWait(80)
+app.processEvents()
+check("stav je blocked", node("Beta").meta.get("_status") == "blocked")
+check(f"přibyl právě jeden undo záznam "
+      f"({len(win.undo.entries) - before_entries})",
+      len(win.undo.entries) - before_entries == 1)
+win._undo()
+app.processEvents()
+check("jedno Ctrl+Z vrátí stav zpět",
+      node("Beta").meta.get("_status") == "todo")
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

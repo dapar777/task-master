@@ -1126,7 +1126,10 @@ class MainWindow(QMainWindow):
         # jeden dialog, zvolený blokující úkol se přiřadí všem označeným.
         if status == "blocked":
             blocked_nodes = list(nodes)
-            QTimer.singleShot(0, lambda ns=blocked_nodes: self._ask_blocker(ns))
+            # metadata už zazálohoval push_fields výše – nezálohuj podruhé
+            QTimer.singleShot(
+                0, lambda ns=blocked_nodes: self._ask_blocker(ns, push_undo=False)
+            )
 
     def _unblocked_by(self, nodes) -> list:
         """Úkoly čekající na některý z `nodes` – dokončením se odblokují."""
@@ -1175,11 +1178,15 @@ class MainWindow(QMainWindow):
             changed.extend(round_changed)
         return changed
 
-    def _ask_blocker(self, nodes) -> None:
+    def _ask_blocker(self, nodes, push_undo: bool = True) -> None:
         """Nabídne (nepovinně) blokující úkol; přiřadí ho všem `nodes`.
 
         Přijímá jeden uzel i seznam (vícevýběr). U vícevýběru se zeptá jednou
         a zvolený blokující úkol přiřadí všem, které jsou ještě ve stavu blocked.
+
+        `push_undo=False` použij, když volající metadata už zazálohoval –
+        jinak by přechod na „Blokováno" vyrobil dva undo záznamy a uživatel
+        by musel mačkat Ctrl+Z dvakrát, než by se stav vrátil.
         """
         if not self.workspace:
             return
@@ -1205,7 +1212,8 @@ class MainWindow(QMainWindow):
         if chosen is None:
             return  # zrušeno – stav „blokováno" zůstává, jen bez vazby
         target = self.workspace.node_by_id(chosen) if chosen else None
-        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        if push_undo:
+            self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
         # blokovat už hotovým úkolem by úkoly nechalo viset navždy (odblokovává
         # se až při jeho dokončení, které nikdy nepřijde) – rovnou je odblokuj
         if target is not None and target.meta.get("_status") == "done":
