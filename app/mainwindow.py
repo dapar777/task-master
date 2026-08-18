@@ -29,6 +29,8 @@ from .constants import (
     ORG_NAME,
     STATUS_GROUP_INDEX,
     STATUS_GROUPS,
+    STATUS_ORDER,
+    STATUSES,
 )
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
@@ -796,6 +798,10 @@ class MainWindow(QMainWindow):
 
     def _show_tree_menu(self, pos) -> None:
         menu = QMenu(self)
+        node = self._current_node
+        if node is not None:  # stejná podnabídka jako na kartách
+            menu.addMenu(self._build_status_menu(node, menu))
+            menu.addSeparator()
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", "task.paste_text", None,
                     "task.rename", "task.delete", None, "task.flag", "task.toggle_done",
@@ -813,6 +819,8 @@ class MainWindow(QMainWindow):
         open_act = menu.addAction("✎ Otevřít v editoru")
         open_act.triggered.connect(lambda: self._on_card_opened(node))
         menu.addSeparator()
+        # stav rovnou z karty – v Bez rušení není vidět combobox v detailu
+        menu.addMenu(self._build_status_menu(node, menu))
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", None,
                     "task.rename", "task.delete", None,
@@ -823,6 +831,33 @@ class MainWindow(QMainWindow):
             else:
                 menu.addAction(self.act[cid])
         return menu
+
+    def _build_status_menu(self, node, parent_menu) -> QMenu:
+        """Podnabídka „Stav" – umožní nastavit stav i mimo strom (Bez rušení).
+
+        Působí na celý vícevýběr, když je v něm i `node` (stejně jako ostatní
+        hromadné operace). Blokováno se doptá na blokující úkol, Hotovo se
+        u úkolu s nedokončenými podúkoly zeptá – obojí řeší _apply_status_to.
+        """
+        sub = QMenu("Stav", parent_menu)
+        current = node.meta.get("_status", "")
+        for key in STATUS_ORDER:
+            act = sub.addAction(STATUSES[key])
+            act.setCheckable(True)
+            act.setChecked(key == current)
+            act.triggered.connect(
+                lambda _checked=False, k=key, n=node: self._set_status_from_card(n, k)
+            )
+        return sub
+
+    def _set_status_from_card(self, node, status: str) -> None:
+        """Stav z kontextového menu karty; na vícevýběr, je-li v něm i `node`."""
+        self._current_node = node
+        sel = self._selected_nodes()
+        nodes = sel if (len(sel) > 1 and node in sel) else [node]
+        if status == node.meta.get("_status") and len(nodes) == 1:
+            return  # beze změny
+        self._apply_status_to(nodes, status)
 
     def _show_card_menu(self, node, global_pos) -> None:
         """Kontextové menu v režimu Bez rušení (karty)."""

@@ -22,6 +22,7 @@ TESTS = [
     ("test_stats.py", "statistiky: počty, odolnost, nezávislost na recyklaci"),
     ("test_dialogs_filters.py", "dialogy a uložené filtry"),
     ("test_undo_ops.py", "undo strukturálních operací bez snapshotu"),
+    ("test_status_menu.py", "nastavení stavu z kontextového menu"),
 ]
 
 
