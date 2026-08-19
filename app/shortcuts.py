@@ -43,6 +43,8 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "task.toggle_done": ("Přepnout hotovo", "Úkoly", "Ctrl+Return", "reorder"),
     "task.block_siblings": ("Zablokovat sourozence (i s podúkoly)", "Úkoly",
                             "Ctrl+Shift+B", "window"),
+    "task.make_sequence": ("Vytvořit sekvenci z označených", "Úkoly",
+                           "Ctrl+Shift+R", "window"),
     # Stavy – fungují ve všech zobrazeních (v Bez rušení není combobox detailu).
     # Bez výchozí zkratky, ať nekolidují; jdou přiřadit v Nastavení zkratek.
     "task.status_todo": ("Stav: Ke zpracování", "Úkoly", "", "window"),

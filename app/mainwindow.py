@@ -40,7 +40,12 @@ from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
 from .stats import StatsDialog
 from .storage import Workspace, now_iso, parse_dt, parse_indented_text, serialize_node
-from .taskdialog import BlockerDialog, TaskDialog, ask_paste_position
+from .taskdialog import (
+    BlockerDialog,
+    SequenceDialog,
+    TaskDialog,
+    ask_paste_position,
+)
 from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_flat, sort_nodes
 
@@ -202,6 +207,10 @@ class MainWindow(QMainWindow):
         bs = self._make("task.block_siblings", self._block_siblings)
         bs.setAutoRepeat(False)
         self.card_view.addAction(bs)
+        # sekvence z označených úkolů (strom i karty)
+        sq = self._make("task.make_sequence", self._make_sequence)
+        sq.setAutoRepeat(False)
+        self.card_view.addAction(sq)
         # undo (strom i karty; editor má vlastní Ctrl+Z)
         un = self._make("edit.undo", self._undo, target=self.tree)
         un.setAutoRepeat(False)
@@ -276,6 +285,7 @@ class MainWindow(QMainWindow):
         self._m_status = m_task.addMenu("Stav")
         self._m_status.aboutToShow.connect(self._fill_status_menu)
         m_task.addAction(self.act["task.block_siblings"])
+        m_task.addAction(self.act["task.make_sequence"])
 
         m_view = mb.addMenu("&Zobrazení")
         for cid in ("view.tree", "view.list", "view.cards"):
@@ -815,7 +825,7 @@ class MainWindow(QMainWindow):
         for cid in ("task.new", "task.new_sub", None,
                     "task.copy", "task.cut", "task.paste", "task.paste_text", None,
                     "task.rename", "task.delete", None, "task.flag", "task.toggle_done",
-                    "task.block_siblings", None, "edit.undo"):
+                    "task.block_siblings", "task.make_sequence", None, "edit.undo"):
             if cid is None:
                 menu.addSeparator()
             else:
@@ -835,7 +845,7 @@ class MainWindow(QMainWindow):
                     "task.copy", "task.cut", "task.paste", None,
                     "task.rename", "task.delete", None,
                     "task.flag", "task.toggle_done", "task.block_siblings",
-                    None, "edit.undo"):
+                    "task.make_sequence", None, "edit.undo"):
             if cid is None:
                 menu.addSeparator()
             else:
@@ -1239,6 +1249,82 @@ class MainWindow(QMainWindow):
                 self.status.showMessage(msg, 3000)
         self._populate()
         self._reselect(nodes)
+
+    def _make_sequence(self) -> None:
+        """Z označených úkolů udělá sekvenci: každý čeká na předchozí.
+
+        Pořadí se předvyplní tak, jak úkoly stojí v zobrazení, a uživatel ho
+        v dialogu potvrdí nebo přeskládá. První zůstane volný; dokončením se
+        odemkne další (o odblokování se stará existující logika kolem
+        `_blocked_by`).
+        """
+        if not self.workspace:
+            return
+        nodes = self._selected_nodes()
+        if len(nodes) < 2:
+            QMessageBox.information(
+                self, "Sekvence",
+                "Označ aspoň dva úkoly (Ctrl+klik nebo Shift+klik).",
+            )
+            return
+        missing = [n for n in nodes if not n.task_id]
+        if missing:
+            QMessageBox.warning(
+                self, "Sekvence",
+                "Některé úkoly nemají identifikátor, nelze je zřetězit.",
+            )
+            return
+
+        ordered = self._in_view_order(nodes)
+        chosen = SequenceDialog.get(self, ordered)
+        if not chosen:
+            return
+
+        self.undo.push_fields([(n.task_id, n.meta) for n in chosen])
+        first, rest = chosen[0], chosen[1:]
+        # první uvolni, pokud ho blokoval někdo z řetězu (jinak by sekvence
+        # nemohla nikdy začít); ostatní naváž na předchozí
+        if first.meta.get("_status") == "blocked" and first.blocked_by in {
+            n.task_id for n in chosen
+        }:
+            first.set_field("_status", "todo")
+        for prev, node in zip(chosen, rest):
+            node.set_field("_status", "blocked")
+            node.set_blocked_by(prev.task_id)
+        self.workspace.push_recent_blocker(first.task_id)
+        if self.detail.node in chosen:
+            self.detail.sync_status(self.detail.node.meta.get("_status"))
+        self.status.showMessage(
+            f"Sekvence z {len(chosen)} úkolů – začíná „{first.title}“", 5000
+        )
+        self._populate()
+        self._select_in_view(first)
+
+    def _in_view_order(self, nodes) -> list:
+        """Úkoly v pořadí, v jakém stojí v aktuálním zobrazení.
+
+        Předvyplnění dialogu tak odpovídá tomu, co uživatel vidí; ve stromu
+        jde o průchod shora dolů, v seznamu i kartách o zobrazené pořadí.
+        """
+        sel = set(nodes)
+        if self._view_mode == "tree":
+            out = []
+
+            def walk(items):
+                for n in items:
+                    if n in sel:
+                        out.append(n)
+                    walk(n.children)
+
+            walk(self._sorted_roots())
+            return out or list(nodes)
+        seq = [n for n in self._flat_sequence() if n in sel]
+        return seq or list(nodes)
+
+    def _sorted_roots(self) -> list:
+        """Kořeny v pořadí podle aktuálního řazení (jako je vidí strom)."""
+        key, desc = self.filter_panel.current_sort()
+        return sort_nodes(self.workspace.roots, key, desc)
 
     def _block_siblings(self) -> None:
         """Vybraným úkolem zablokuje všechny sourozence i s jejich podstromy.

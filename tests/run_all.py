@@ -23,6 +23,7 @@ TESTS = [
     ("test_dialogs_filters.py", "dialogy a uložené filtry"),
     ("test_undo_ops.py", "undo strukturálních operací bez snapshotu"),
     ("test_status_menu.py", "nastavení stavu z kontextového menu"),
+    ("test_sequence.py", "sekvence úkolů: řetěz blokování + dialog"),
 ]
 
 

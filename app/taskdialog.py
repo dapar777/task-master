@@ -5,13 +5,17 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QToolButton,
     QTreeWidget,
@@ -405,3 +409,115 @@ def ask_paste_position(parent, has_current: bool) -> str | None:
     if clicked is btn_end:
         return "end"
     return None
+
+
+class SequenceDialog(QDialog):
+    """Potvrzení a úprava pořadí při vytváření sekvence úkolů.
+
+    Sekvence = řetěz blokování: druhý úkol čeká na první, třetí na druhý atd.
+    Pořadí jde přeskládat tlačítky nebo tažením; položku lze i vyřadit.
+    """
+
+    def __init__(self, nodes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Vytvořit sekvenci")
+        self.setMinimumWidth(460)
+
+        info = QLabel(
+            "Úkoly se zřetězí v tomto pořadí – každý bude blokovaný tím "
+            "předchozím. První zůstane volný a jak ho dokončíš, odemkne se "
+            "další."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color:#555;")
+
+        self.list = QListWidget()
+        self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        for n in nodes:
+            it = QListWidgetItem(breadcrumb(n))
+            it.setData(Qt.ItemDataRole.UserRole, n)
+            self.list.addItem(it)
+        self.list.setCurrentRow(0)
+        self.list.model().rowsMoved.connect(self._renumber)
+        self.list.model().rowsRemoved.connect(self._renumber)
+
+        up = QToolButton(); up.setText("▲"); up.setToolTip("Posunout nahoru")
+        down = QToolButton(); down.setText("▼"); down.setToolTip("Posunout dolů")
+        rm = QToolButton(); rm.setText("✕"); rm.setToolTip("Vyřadit ze sekvence")
+        up.clicked.connect(lambda: self._move(-1))
+        down.clicked.connect(lambda: self._move(1))
+        rm.clicked.connect(self._remove)
+
+        side = QVBoxLayout()
+        side.addWidget(up); side.addWidget(down)
+        side.addSpacing(8); side.addWidget(rm)
+        side.addStretch(1)
+
+        row = QHBoxLayout()
+        row.addWidget(self.list, 1)
+        row.addLayout(side)
+
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        self.summary.setStyleSheet("color:#666; font-size:11px;")
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Vytvořit sekvenci")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(info)
+        lay.addLayout(row)
+        lay.addWidget(self.summary)
+        lay.addWidget(self.buttons)
+        self._renumber()
+
+    # ----- pořadí -----
+    def _move(self, delta: int) -> None:
+        r = self.list.currentRow()
+        t = r + delta
+        if r < 0 or not (0 <= t < self.list.count()):
+            return
+        self.list.insertItem(t, self.list.takeItem(r))
+        self.list.setCurrentRow(t)
+        self._renumber()
+
+    def _remove(self) -> None:
+        r = self.list.currentRow()
+        if r >= 0:
+            self.list.takeItem(r)
+            self._renumber()
+
+    def _renumber(self, *_args) -> None:
+        """Přečísluje popisky a shrne, co se stane; míň než 2 úkoly nedávají smysl."""
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            n = it.data(Qt.ItemDataRole.UserRole)
+            it.setText(f"{i + 1}.  {breadcrumb(n)}")
+        cnt = self.list.count()
+        if cnt >= 2:
+            first = self.list.item(0).data(Qt.ItemDataRole.UserRole)
+            self.summary.setText(
+                f"Zřetězí se {cnt} úkolů; volný zůstane „{first.title}“, "
+                f"zbylých {cnt - 1} se zablokuje."
+            )
+        else:
+            self.summary.setText("Sekvence potřebuje aspoň dva úkoly.")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(cnt >= 2)
+
+    def nodes(self) -> list:
+        return [self.list.item(i).data(Qt.ItemDataRole.UserRole)
+                for i in range(self.list.count())]
+
+    @staticmethod
+    def get(parent, nodes) -> list | None:
+        """Vrátí úkoly v potvrzeném pořadí, nebo None při zrušení."""
+        dlg = SequenceDialog(nodes, parent)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            out = dlg.nodes()
+            return out if len(out) >= 2 else None
+        return None
