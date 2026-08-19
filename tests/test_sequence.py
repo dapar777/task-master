@@ -190,6 +190,59 @@ check("Delta zůstala nedotčená", st("Delta") == "todo")
 print("6) Funguje bez opuštění Bez rušení")
 check("režim zůstal cards", win._view_mode == "cards")
 
+print("7) Výchozí pořadí odpovídá tomu, co je vidět na obrazovce")
+from app.tasktree import NODE_ROLE  # noqa: E402
+
+# vlastní pořadí (Zebra, Alfa, Mango) se nesmí přepsat abecedním
+par = win.workspace.create_root("Rodic")
+for t in ("Zebra", "Alfa", "Mango"):
+    win.workspace.create_child_of(par, t)
+win.workspace.load()
+win._populate()
+app.processEvents()
+all_nodes = list(win.workspace.all_nodes())
+
+
+def tree_seen():
+    out = []
+
+    def walk(it):
+        n = it.data(0, NODE_ROLE)
+        if n is not None:
+            out.append(n.title)
+        for i in range(it.childCount()):
+            walk(it.child(i))
+
+    for i in range(win.tree.topLevelItemCount()):
+        walk(win.tree.topLevelItem(i))
+    return out
+
+
+def cards_seen():
+    by_path = {str(n.path): n.title for n in all_nodes}
+    return [by_path[p] for p in win.card_view._order if p in by_path]
+
+
+for mode in ("tree", "list", "cards"):
+    win._view_mode = mode
+    win._populate()
+    app.processEvents()
+    QTest.qWait(60)
+    app.processEvents()
+    seen = cards_seen() if mode == "cards" else tree_seen()
+    order = [n.title for n in win._in_view_order(all_nodes)]
+    check(f"{mode}: pořadí v dialogu = pořadí na obrazovce", seen == order)
+
+print("8) Pořadí sleduje i přeskupení podle stavů (Bez rušení)")
+win._view_mode = "cards"
+node("Alfa").set_field("_status", "waiting")
+win._populate()
+app.processEvents()
+QTest.qWait(60)
+app.processEvents()
+check("po změně stavu pořadí pořád sedí",
+      cards_seen() == [n.title for n in win._in_view_order(all_nodes)])
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

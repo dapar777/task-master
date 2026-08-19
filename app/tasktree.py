@@ -374,6 +374,26 @@ class TaskTreeWidget(QTreeWidget):
             self.taskSelected.emit(self.current_node())
         return True
 
+    def visible_paths(self) -> list[str]:
+        """Cesty úkolů shora dolů tak, jak jsou právě vykreslené.
+
+        Pořadí bere z widgetu (respektuje řazení i filtr), ne z modelu.
+        Položky pod sbalenou větví se počítají taky – ve stromu pořád patří
+        na svoje místo, jen nejsou vidět.
+        """
+        out = []
+
+        def walk(item):
+            n = item.data(0, NODE_ROLE)
+            if n is not None:
+                out.append(str(n.path))
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+        for i in range(self.topLevelItemCount()):
+            walk(self.topLevelItem(i))
+        return out
+
     def _expand_ancestors(self, item) -> None:
         p = item.parent()
         while p is not None:

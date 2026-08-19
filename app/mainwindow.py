@@ -1301,30 +1301,24 @@ class MainWindow(QMainWindow):
         self._select_in_view(first)
 
     def _in_view_order(self, nodes) -> list:
-        """Úkoly v pořadí, v jakém stojí v aktuálním zobrazení.
+        """Úkoly v pořadí, v jakém právě stojí na obrazovce.
 
-        Předvyplnění dialogu tak odpovídá tomu, co uživatel vidí; ve stromu
-        jde o průchod shora dolů, v seznamu i kartách o zobrazené pořadí.
+        Čte se přímo z widgetu, ne z modelu – jinak by se pořadí rozešlo
+        s tím, co uživatel vidí (vlastní řazení, filtr, sbalené větve).
+        Co ve widgetu není, se připojí na konec, ať se nic neztratí.
         """
-        sel = set(nodes)
-        if self._view_mode == "tree":
-            out = []
-
-            def walk(items):
-                for n in items:
-                    if n in sel:
-                        out.append(n)
-                    walk(n.children)
-
-            walk(self._sorted_roots())
-            return out or list(nodes)
-        seq = [n for n in self._flat_sequence() if n in sel]
-        return seq or list(nodes)
-
-    def _sorted_roots(self) -> list:
-        """Kořeny v pořadí podle aktuálního řazení (jako je vidí strom)."""
-        key, desc = self.filter_panel.current_sort()
-        return sort_nodes(self.workspace.roots, key, desc)
+        sel = list(nodes)
+        rank = {}
+        if self._view_mode == "cards":
+            for i, path in enumerate(self.card_view._order):
+                rank[path] = i
+        else:  # strom i seznam kreslí TaskTreeWidget
+            for i, path in enumerate(self.tree.visible_paths()):
+                rank[path] = i
+        big = len(rank)
+        return sorted(
+            sel, key=lambda n: (rank.get(str(n.path), big), sel.index(n))
+        )
 
     def _block_siblings(self) -> None:
         """Vybraným úkolem zablokuje všechny sourozence i s jejich podstromy.
