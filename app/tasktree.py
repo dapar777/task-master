@@ -77,6 +77,22 @@ def sort_flat(nodes, key: str, desc: bool = False):
     return out
 
 
+def _status_text(node) -> str:
+    """Text sloupce Stav – u odkladu i zbývající čas / výzva po doběhnutí."""
+    status = node.meta.get("_status", "")
+    text = STATUSES.get(status, str(status))
+    if status == "snoozed":
+        rem = node.snooze_remaining()
+        if rem is not None:
+            from .taskdialog import format_duration
+            text += f"  ⏰ vypršelo" if rem <= 0 else f"  ⏳ {format_duration(rem)}"
+    if node.blocked_by:
+        text += " ⛔"
+    elif node.auto_blocked:
+        text += " ⛔ auto"
+    return text
+
+
 def breadcrumb(node: TaskNode) -> str:
     parts = []
     n = node
@@ -253,12 +269,7 @@ class TaskTreeWidget(QTreeWidget):
             text = "🚩 " + text
         status = node.meta.get("_status", "")
         priority = node.meta.get("_priority", "")
-        status_text = STATUSES.get(status, str(status))
-        if node.blocked_by:
-            status_text += " ⛔"
-        elif node.auto_blocked:
-            status_text += " ⛔ auto"
-        item.setText(1, status_text)
+        item.setText(1, _status_text(node))
         item.setText(2, str(PRIORITIES.get(priority, priority)))
         if status in STATUS_COLORS:
             item.setBackground(1, QBrush(QColor(STATUS_COLORS[status])))
@@ -373,6 +384,22 @@ class TaskTreeWidget(QTreeWidget):
         if not silent:
             self.taskSelected.emit(self.current_node())
         return True
+
+    def update_countdowns(self, nodes) -> None:
+        """Přepíše sloupec Stav u odložených úkolů (bez přebudování stromu)."""
+        want = {str(n.path) for n in nodes}
+        stack = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            if it is None:
+                continue
+            n = it.data(0, NODE_ROLE)
+            if n is not None and str(n.path) in want:
+                self.blockSignals(True)
+                it.setText(1, _status_text(n))
+                self.blockSignals(False)
+            for i in range(it.childCount()):
+                stack.append(it.child(i))
 
     def visible_paths(self) -> list[str]:
         """Cesty úkolů shora dolů tak, jak jsou právě vykreslené.

@@ -27,6 +27,8 @@ from .constants import (
     APP_NAME,
     DEFAULT_PRIORITY,
     ORG_NAME,
+    DEFAULT_SNOOZE,
+    ELAPSED_GROUP_INDEX,
     STATUS_GROUP_INDEX,
     STATUS_GROUPS,
     STATUS_ORDER,
@@ -43,6 +45,8 @@ from .storage import Workspace, now_iso, parse_dt, parse_indented_text, serializ
 from .taskdialog import (
     BlockerDialog,
     SequenceDialog,
+    SnoozeDialog,
+    format_duration,
     TaskDialog,
     ask_paste_position,
 )
@@ -71,11 +75,23 @@ class MainWindow(QMainWindow):
         self.undo = UndoManager()
         self.act: dict[str, QAction] = {}
 
+        # naposledy použitý odklad (předvyplní dialog; výchozí z konstant)
+        self._last_snooze = tuple(
+            int(self.settings.value(f"snooze_{k}", v, type=int))
+            for k, v in zip(("d", "h", "m"), DEFAULT_SNOOZE)
+        )
+
         # debounce pro ukládání stavu UI do rootu workspace
         self._state_timer = QTimer(self)
         self._state_timer.setSingleShot(True)
         self._state_timer.setInterval(800)
         self._state_timer.timeout.connect(self._save_state)
+
+        # tik odpočtů: překresluje zbývající čas a posune doběhlé nahoru
+        self._snooze_timer = QTimer(self)
+        self._snooze_timer.setInterval(1000)
+        self._snooze_timer.timeout.connect(self._tick_snooze)
+        self._snooze_timer.start()
 
         cfg_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation))
         self.shortcuts = ShortcutManager(cfg_dir / "shortcuts.json")
@@ -136,6 +152,7 @@ class MainWindow(QMainWindow):
         self.card_view.cardOpened.connect(self._on_card_opened)
         self.card_view.cardStatusToggled.connect(self._on_status_toggled)
         self.card_view.cardContextMenu.connect(self._show_card_menu)
+        self.card_view.cardResumeRequested.connect(self._resume_snoozed)
 
         # přepínání normální / karty
         self.stack = QStackedWidget()
@@ -198,7 +215,7 @@ class MainWindow(QMainWindow):
         self.card_view.addAction(td)
         # stavy jako příkazy – kvůli paletě a volitelné zkratce (Hotovo má
         # vlastní přepínač Ctrl+Enter, proto tu není)
-        for _key in ("todo", "in_progress", "waiting", "blocked"):
+        for _key in ("todo", "in_progress", "waiting", "snoozed", "blocked"):
             a = self._make(f"task.status_{_key}",
                            lambda _c=False, k=_key: self._set_status_current(k))
             a.setAutoRepeat(False)
@@ -566,14 +583,21 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _group_index(node) -> int:
+        """Skupina pro řazení v Bez rušení.
+
+        Odložený úkol patří mezi čekající, dokud odpočet běží; jakmile doběhne,
+        jde úplně nahoru – volá po akci a nemá zapadnout mezi ostatní.
+        """
+        if node.snooze_elapsed():
+            return ELAPSED_GROUP_INDEX
         return STATUS_GROUP_INDEX.get(
             node.meta.get("_status", ""), len(STATUS_GROUPS)
         )
 
     @staticmethod
     def _is_compact_card(node) -> bool:
-        """Úsporná (nižší) karta: vše mimo skupinu Probíhá+Ke zpracování."""
-        return MainWindow._group_index(node) != 0
+        """Úsporná (nižší) karta: vše mimo horní skupiny (doběhlé + aktivní)."""
+        return MainWindow._group_index(node) > 1
 
     def _on_filter_changed(self) -> None:
         self._populate()
@@ -1094,6 +1118,26 @@ class MainWindow(QMainWindow):
         self._apply_status_to(nodes, status)
 
     def _apply_status_to(self, nodes, status: str) -> None:
+        if status == "snoozed":
+            # interval potřebujeme PŘED změnou – jinak by úkol uvázl ve stavu
+            # „čeká do…" bez termínu a nikdy by se neozval
+            secs = SnoozeDialog.get(self, nodes[0] if nodes else None,
+                                    self._last_snooze)
+            if secs is None:
+                QTimer.singleShot(0, self._populate)  # zrušeno
+                return
+            self._set_last_snooze(secs)
+            self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+            for n in nodes:
+                n.set_snooze(secs)
+            if self.detail.node in nodes:
+                self.detail.sync_status("snoozed")
+            self.status.showMessage(
+                f"Odloženo o {format_duration(secs)}"
+                + (f" – {len(nodes)} úkolů" if len(nodes) > 1 else ""), 4000
+            )
+            QTimer.singleShot(0, lambda: self._after_status_toggle(True))
+            return
         if status == "done":
             risky = [n for n in nodes if n.incomplete_subtasks()]
             if risky and not self._confirm_complete_bulk(risky):
@@ -1111,6 +1155,7 @@ class MainWindow(QMainWindow):
         group_before = self._group_index(active) if active is not None else None
         for n in nodes:
             n.set_field("_status", status)
+            n.clear_snooze()  # jiný stav = odpočet už neplatí
         for n in unblocked:
             n.set_field("_status", "todo")  # set_field zruší i _blocked_by
         if self.detail.node in nodes or self.detail.node in unblocked:
@@ -1592,6 +1637,59 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             "Úsporné karty: " + ("zapnuto" if checked else "vypnuto"), 1500
         )
+
+    # ------------------------------------------------------------------
+    # Odklad („čeká do…")
+    # ------------------------------------------------------------------
+    def _set_last_snooze(self, seconds: int) -> None:
+        """Zapamatuje si poslední interval, ať ho dialog příště předvyplní."""
+        d, rem = divmod(int(seconds), 86400)
+        h, rem = divmod(rem, 3600)
+        m = rem // 60
+        if (d, h, m) == (0, 0, 0):
+            return  # kratší než minuta (typicky z testů) – nemá smysl pamatovat
+        self._last_snooze = (d, h, m)
+        for key, val in zip(("d", "h", "m"), self._last_snooze):
+            self.settings.setValue(f"snooze_{key}", int(val))
+
+    def _tick_snooze(self) -> None:
+        """Jednou za sekundu obnoví odpočty; při doběhnutí přeskládá pořadí.
+
+        Překresluje se jen když je co ukazovat – jinak by časovač zbytečně
+        přestavoval celé zobrazení každou vteřinu.
+        """
+        if not self.workspace:
+            return
+        snoozed = [n for n in self.workspace.all_nodes()
+                   if n.meta.get("_status") == "snoozed"]
+        if not snoozed:
+            return
+        elapsed_now = {str(n.path) for n in snoozed if n.snooze_elapsed()}
+        if elapsed_now != getattr(self, "_elapsed_paths", set()):
+            # něco právě doběhlo (nebo bylo obnoveno) – přeskládej skupiny
+            self._elapsed_paths = elapsed_now
+            self._populate()
+            return
+        self._refresh_countdowns(snoozed)
+
+    def _refresh_countdowns(self, snoozed) -> None:
+        """Přepíše zbývající čas na kartách i ve stromu bez přebudování."""
+        if self._view_mode == "cards":
+            self.card_view.update_countdowns()
+        else:
+            self.tree.update_countdowns(snoozed)
+
+    def _resume_snoozed(self, node) -> None:
+        """Tlačítko Obnovit: odloží znovu o stejný interval jako minule."""
+        secs = node.snooze_secs or 600
+        self.undo.push_fields([(node.task_id, node.meta)])
+        node.set_snooze(secs)
+        self.status.showMessage(
+            f"„{node.title}“ odloženo znovu o {format_duration(secs)}", 4000
+        )
+        self._elapsed_paths = getattr(self, "_elapsed_paths", set()) - {str(node.path)}
+        self._populate()
+        self._select_in_view(node)
 
     def _select_in_view(self, node, focus: bool = False) -> None:
         path = str(node.path)

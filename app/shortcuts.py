@@ -50,6 +50,7 @@ COMMAND_DEFS: dict[str, tuple[str, str, str, str]] = {
     "task.status_todo": ("Stav: Ke zpracování", "Úkoly", "", "window"),
     "task.status_in_progress": ("Stav: Probíhá", "Úkoly", "", "window"),
     "task.status_waiting": ("Stav: Čeká", "Úkoly", "", "window"),
+    "task.status_snoozed": ("Stav: Čeká do… (odklad)", "Úkoly", "", "window"),
     "task.status_blocked": ("Stav: Blokováno", "Úkoly", "", "window"),
     "edit.undo": ("Vrátit zpět", "Úkoly", "Ctrl+Z", "reorder"),
     # Aplikace / zobrazení

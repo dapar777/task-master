@@ -105,7 +105,8 @@ check("režim je Bez rušení", win._view_mode == "cards")
 sm = status_menu(node("Alfa"))
 check("podnabídka Stav existuje", sm is not None)
 labels = [a.text() for a in sm.actions()]
-check("nabízí všech 5 stavů", sorted(labels) == sorted(STATUSES.values()))
+check(f"nabízí všechny stavy ({len(labels)})",
+      sorted(labels) == sorted(STATUSES.values()))
 check("aktuální stav je zaškrtnutý",
       [a.text() for a in sm.actions() if a.isChecked()] == [STATUSES["todo"]])
 
@@ -143,7 +144,7 @@ app.processEvents()
 win._current_node = node("Gama")
 sub = win._build_status_menu(node("Gama"), None)
 check("podnabídka jde sestavit i pro strom", sub is not None)
-check("má všech 5 stavů", len(sub.actions()) == len(STATUSES))
+check("má všechny stavy", len(sub.actions()) == len(STATUSES))
 
 print("7) Podnabídka Stav je i v hlavním menu Úkol")
 # hlavní menu se staví jednou při startu, položky se plní až při rozbalení
@@ -151,7 +152,7 @@ win._current_node = node("Gama")
 win._m_status.aboutToShow.emit()
 app.processEvents()
 main_labels = [a.text() for a in win._m_status.actions()]
-check("hlavní menu nabízí všech 5 stavů",
+check("hlavní menu nabízí všechny stavy",
       sorted(main_labels) == sorted(STATUSES.values()))
 check("zaškrtnutý je aktuální stav Gamy",
       [a.text() for a in win._m_status.actions() if a.isChecked()]
@@ -179,7 +180,9 @@ print("8) Stavy jsou i příkazy (paleta, volitelná zkratka)")
 from app.shortcuts import COMMAND_DEFS  # noqa: E402
 
 cmds = [c for c in COMMAND_DEFS if c.startswith("task.status_")]
-check("existují 4 stavové příkazy", len(cmds) == 4)
+# příkaz má každý stav kromě „hotovo" (to má vlastní přepínač Ctrl+Enter)
+check(f"příkaz existuje pro každý stav mimo hotovo ({len(cmds)})",
+      len(cmds) == len(STATUSES) - 1)
 check("všechny jsou zaregistrované v okně",
       all(c in win.act for c in cmds))
 check("mají prázdnou výchozí zkratku (bez kolizí)",

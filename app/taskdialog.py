@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -17,6 +19,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QSlider,
+    QSpinBox,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -24,8 +28,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .constants import DEFAULT_PRIORITY, DEFAULT_STATUS, PRIORITIES, STATUSES
+from .constants import (
+    DEFAULT_PRIORITY,
+    DEFAULT_SNOOZE,
+    DEFAULT_STATUS,
+    PRIORITIES,
+    SNOOZE_MAX_DAYS,
+    STATUSES,
+)
 from .tasktree import breadcrumb
+
+
+def format_duration(seconds: float) -> str:
+    """Lidsky čitelná délka: „2 d 3 h", „45 min", „12 s"."""
+    secs = int(max(0, seconds))
+    d, rem = divmod(secs, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    if d:
+        return f"{d} d {h} h" if h else f"{d} d"
+    if h:
+        return f"{h} h {m} min" if m else f"{h} h"
+    if m:
+        return f"{m} min"
+    return f"{s} s"
 
 
 class TaskDialog(QDialog):
@@ -520,4 +546,98 @@ class SequenceDialog(QDialog):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             out = dlg.nodes()
             return out if len(out) >= 2 else None
+        return None
+
+
+class SnoozeDialog(QDialog):
+    """Volba intervalu odkladu – posuvníky na dny, hodiny a minuty.
+
+    Předvyplní se naposledy použitá hodnota (viz DEFAULT_SNOOZE pro první
+    použití). Vrací počet sekund.
+    """
+
+    def __init__(self, node=None, initial=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Čekat do…")
+        self.setMinimumWidth(420)
+        d, h, m = initial or DEFAULT_SNOOZE
+
+        if node is not None:
+            info = QLabel(f"Za jak dlouho se má „{node.title}“ znovu ozvat?")
+        else:
+            info = QLabel("Za jak dlouho se mají úkoly znovu ozvat?")
+        info.setWordWrap(True)
+        info.setStyleSheet("color:#555;")
+
+        form = QFormLayout()
+        self._sliders = {}
+        for key, label, maximum, value in (
+            ("days", "Dny", SNOOZE_MAX_DAYS, d),
+            ("hours", "Hodiny", 23, h),
+            ("minutes", "Minuty", 59, m),
+        ):
+            sl = QSlider(Qt.Orientation.Horizontal)
+            sl.setRange(0, maximum)
+            sl.setValue(int(value))
+            sl.setPageStep(1)
+            num = QSpinBox()
+            num.setRange(0, maximum)
+            num.setValue(int(value))
+            # posuvník a číslo drží stejnou hodnotu (psaní i tažení)
+            sl.valueChanged.connect(num.setValue)
+            num.valueChanged.connect(sl.setValue)
+            sl.valueChanged.connect(self._update_summary)
+            row = QHBoxLayout()
+            row.addWidget(sl, 1)
+            row.addWidget(num)
+            wrap = QWidget()
+            wrap.setLayout(row)
+            form.addRow(label, wrap)
+            self._sliders[key] = sl
+
+        self.summary = QLabel()
+        self.summary.setStyleSheet("color:#444;")
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Odložit")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(info)
+        lay.addLayout(form)
+        lay.addWidget(self.summary)
+        lay.addWidget(self.buttons)
+        self._update_summary()
+
+    # ----- hodnoty -----
+    def parts(self) -> tuple[int, int, int]:
+        return (self._sliders["days"].value(),
+                self._sliders["hours"].value(),
+                self._sliders["minutes"].value())
+
+    def seconds(self) -> int:
+        d, h, m = self.parts()
+        return d * 86400 + h * 3600 + m * 60
+
+    def _update_summary(self, *_a) -> None:
+        secs = self.seconds()
+        if secs <= 0:
+            self.summary.setText("Nastav aspoň minutu.")
+        else:
+            when = datetime.now() + timedelta(seconds=secs)
+            self.summary.setText(
+                f"Ozve se za {format_duration(secs)}  ·  {when.strftime('%d.%m. %H:%M')}"
+            )
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(secs > 0)
+
+    @staticmethod
+    def get(parent, node=None, initial=None) -> int | None:
+        """Vrátí délku odkladu v sekundách, nebo None při zrušení."""
+        dlg = SnoozeDialog(node, initial, parent)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            secs = dlg.seconds()
+            return secs if secs > 0 else None
         return None

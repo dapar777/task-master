@@ -7,9 +7,16 @@ STATUSES = {
     "todo": "Ke zpracování",
     "in_progress": "Probíhá",
     "waiting": "Čeká",
+    "snoozed": "Čeká do…",
     "blocked": "Blokováno",
     "done": "Hotovo",
 }
+
+# Výchozí odklad, když uživatel ještě žádný nepoužil (dny, hodiny, minuty)
+DEFAULT_SNOOZE = (0, 0, 10)
+# horní meze posuvníků v dialogu odkladu
+SNOOZE_MAX_DAYS = 30
+
 
 # Priorita 1–10 (10 = nejvyšší). Klíč je celé číslo, popisek text.
 PRIORITIES = {i: str(i) for i in range(1, 11)}
@@ -25,6 +32,7 @@ STATUS_COLORS = {
     "todo": "#ffffff",
     "in_progress": "#cfe3ff",
     "waiting": "#ffe9c7",
+    "snoozed": "#ffe0f0",       # odložený úkol s běžícím odpočtem
     "blocked": "#ffd6d6",
     "done": "#d4f5d4",
 }
@@ -55,12 +63,19 @@ STATUS_ORDER = list(STATUSES.keys())
 
 # Skupiny stavů pro režim „Bez rušení" (karty). Pořadí skupin je pevné, uvnitř
 # skupiny se řadí podle vlastního pořadí. Přesun v pořadí jde jen v rámci skupiny.
+# Pozn.: „snoozed" (čeká do…) se do skupin nepočítá staticky – dokud odpočet
+# běží, patří mezi „waiting"; jakmile doběhne, jde úplně nahoru (viz
+# MainWindow._group_index a ELAPSED_GROUP_INDEX).
 STATUS_GROUPS = (
+    ("elapsed", ()),          # doběhlé odklady – volají po akci hned
     ("active", ("in_progress", "todo")),
-    ("waiting", ("waiting",)),
+    ("waiting", ("waiting", "snoozed")),
     ("blocked", ("blocked",)),
     ("done", ("done",)),
 )
+
+# index skupiny pro úkol s doběhlým odkladem (úplně nahoře)
+ELAPSED_GROUP_INDEX = 0
 
 # stav -> index skupiny (neznámý stav spadne na konec)
 STATUS_GROUP_INDEX = {
@@ -69,6 +84,10 @@ STATUS_GROUP_INDEX = {
 
 # skupina, která se v úsporném zobrazení NEzmenšuje (plná výška karet)
 FULL_HEIGHT_GROUP = "active"
+
+# doběhlý odklad má plnou výšku karty taky – jinak by nejnaléhavější úkoly
+# byly nejmenší
+FULL_HEIGHT_GROUPS = ("elapsed", "active")
 
 # Klíče metadat v YAML (vše s podtržítkem na začátku = systémová metadata)
 META_KEYS = (

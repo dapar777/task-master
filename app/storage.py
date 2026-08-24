@@ -20,7 +20,7 @@ import os
 import re
 import shutil
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -79,6 +79,8 @@ def default_meta(title: str) -> dict:
         "_links": [],
         "_refs": [],
         "_blocked_by": "",
+        "_snooze_until": "",
+        "_snooze_secs": 0,
     }
 
 
@@ -317,6 +319,49 @@ class TaskNode:
     def set_blocked_by(self, target_id: str) -> None:
         self.meta["_blocked_by"] = str(target_id or "")
         self.touch()
+
+    # ----- odklad („čeká do…") -----
+    @property
+    def snooze_until(self) -> "datetime | None":
+        """Kdy odklad skončí; None = úkol není odložený."""
+        if self.meta.get("_status") != "snoozed":
+            return None
+        return parse_dt(self.meta.get("_snooze_until"))
+
+    @property
+    def snooze_secs(self) -> int:
+        """Délka posledního odkladu v sekundách (pro tlačítko Obnovit)."""
+        try:
+            return max(0, int(self.meta.get("_snooze_secs", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def snooze_remaining(self, now: "datetime | None" = None) -> "float | None":
+        """Zbývající sekundy odkladu; záporné = doběhl, None = neodložený."""
+        until = self.snooze_until
+        if until is None:
+            return None
+        return (until - (now or datetime.now())).total_seconds()
+
+    def snooze_elapsed(self, now: "datetime | None" = None) -> bool:
+        """Doběhl odklad? (úkol volá po akci a řadí se úplně nahoru)"""
+        rem = self.snooze_remaining(now)
+        return rem is not None and rem <= 0
+
+    def set_snooze(self, seconds: int) -> None:
+        """Odloží úkol o `seconds`; délku si pamatuje pro opakování."""
+        seconds = max(1, int(seconds))
+        self.meta["_status"] = "snoozed"
+        self.meta["_snooze_until"] = (
+            datetime.now() + timedelta(seconds=seconds)
+        ).isoformat(timespec="seconds")
+        self.meta["_snooze_secs"] = seconds
+        self.meta.pop("_auto_blocked", None)
+        self.touch()
+
+    def clear_snooze(self) -> None:
+        """Zruší termín odkladu (délku nech – ať jde Obnovit stejnou dobou)."""
+        self.meta["_snooze_until"] = ""
 
     # ----- automatické blokování podle přímých podúkolů -----
     @property

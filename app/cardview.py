@@ -16,11 +16,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from .constants import PRIORITY_COLORS, STATUS_COLORS, STATUSES
+from .taskdialog import format_duration
 from .tasktree import breadcrumb
 
 
@@ -58,6 +60,7 @@ class CardWidget(QFrame):
     opened = Signal(object)
     statusToggled = Signal(object, str)
     contextRequested = Signal(object, object)  # (node, globální pozice)
+    resumeRequested = Signal(object)           # (node) – tlačítko Obnovit
 
     def __init__(self, node, parent=None, resolver=None, compact=False):
         super().__init__(parent)
@@ -113,6 +116,28 @@ class CardWidget(QFrame):
             )
             title_row.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
 
+        # odpočet odkladu; po doběhnutí místo něj tlačítko Obnovit
+        self.countdown = None
+        self.resume_btn = None
+        if node.meta.get("_status") == "snoozed":
+            self.countdown = QLabel()
+            self.countdown.setStyleSheet(
+                "background:rgba(255,255,255,0.8); color:#8a2a6a;"
+                "border:1px solid #d98cc0; border-radius:9px;"
+                "padding:0px 7px; font-size:11px; font-weight:bold;"
+            )
+            title_row.addWidget(self.countdown, 0, Qt.AlignmentFlag.AlignTop)
+            self.resume_btn = QToolButton()
+            self.resume_btn.setText("↻ Obnovit")
+            self.resume_btn.setToolTip("Odložit znovu o stejný interval")
+            self.resume_btn.setAutoRaise(True)
+            self.resume_btn.setStyleSheet(
+                "QToolButton { color:#8a2a6a; font-size:11px; font-weight:bold; }"
+            )
+            self.resume_btn.clicked.connect(lambda: self.resumeRequested.emit(self.node))
+            title_row.addWidget(self.resume_btn, 0, Qt.AlignmentFlag.AlignTop)
+            self.refresh_countdown()
+
         blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
 
         path_text = breadcrumb(node)
@@ -156,6 +181,30 @@ class CardWidget(QFrame):
             )
             self._tip_loaded = True
         super().enterEvent(event)
+
+    def refresh_countdown(self) -> None:
+        """Přepíše zbývající čas; po doběhnutí ukáže výzvu místo odpočtu."""
+        if self.countdown is None:
+            return
+        rem = self.node.snooze_remaining()
+        if rem is None:
+            return
+        if rem > 0:
+            self.countdown.setText(f"⏳ {format_duration(rem)}")
+            self.countdown.setToolTip("Zbývá do konce odkladu")
+            self.countdown.setStyleSheet(
+                "background:rgba(255,255,255,0.8); color:#8a2a6a;"
+                "border:1px solid #d98cc0; border-radius:9px;"
+                "padding:0px 7px; font-size:11px; font-weight:bold;"
+            )
+        else:
+            self.countdown.setText("⏰ vypršelo")
+            self.countdown.setToolTip("Odklad skončil – úkol čeká na tebe")
+            self.countdown.setStyleSheet(
+                "background:#ffd9d9; color:#b02020;"
+                "border:1px solid #e08080; border-radius:9px;"
+                "padding:0px 7px; font-size:11px; font-weight:bold;"
+            )
 
     def _on_check(self, checked: bool) -> None:
         self.statusToggled.emit(self.node, "done" if checked else "todo")
@@ -203,6 +252,7 @@ class CardView(QScrollArea):
     cardOpened = Signal(object)
     cardStatusToggled = Signal(object, str)
     cardContextMenu = Signal(object, object)  # (node, globální pozice)
+    cardResumeRequested = Signal(object)      # (node) – tlačítko Obnovit
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -259,6 +309,7 @@ class CardView(QScrollArea):
             node.meta.get("_status"), node.meta.get("_priority"),
             node.meta.get("_category"), tuple(node.meta.get("_tags") or ()),
             node.blocked_by, node.auto_blocked, blocker,
+            node.snooze_elapsed(),  # doběhnutí mění vzhled i zařazení
             len(node.links), len(node.refs), node.order,
             _incomplete_subtasks(node),
         )
@@ -272,6 +323,7 @@ class CardView(QScrollArea):
         card.opened.connect(self.cardOpened)
         card.statusToggled.connect(self.cardStatusToggled)
         card.contextRequested.connect(self._on_card_context)
+        card.resumeRequested.connect(self.cardResumeRequested)
         return card
 
     def _rebuild(self, nodes, compact_fn) -> None:
@@ -349,6 +401,11 @@ class CardView(QScrollArea):
 
     def scroll_to_top(self) -> None:
         self.verticalScrollBar().setValue(0)
+
+    def update_countdowns(self) -> None:
+        """Obnoví odpočty na kartách bez přebudování celého seznamu."""
+        for card in self._cards.values():
+            card.refresh_countdown()
 
     def _apply_selection_styles(self) -> None:
         for p, card in self._cards.items():
