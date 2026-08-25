@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .constants import PRIORITY_COLORS, STATUS_COLORS, STATUSES
+from .constants import PRIORITY_COLORS, STATUSES, status_color
 from .taskdialog import format_duration
 from .tasktree import breadcrumb
 
@@ -32,7 +32,10 @@ def _incomplete_subtasks(node) -> int:
 
 
 def _props_text(node, blocker=None) -> str:
-    status = STATUSES.get(node.meta.get("_status", ""), "?")
+    if node.snooze_elapsed():
+        status = "⏰ Čas vypršel"   # už nečeká – volá po akci
+    else:
+        status = STATUSES.get(node.meta.get("_status", ""), "?")
     if node.blocked_by:
         status += f" ⛔ {blocker.title}" if blocker is not None else " ⛔ (smazaný úkol)"
     elif node.auto_blocked:
@@ -76,7 +79,7 @@ class CardWidget(QFrame):
         status = node.meta.get("_status", "")
         done = status == "done"
         # pozadí: vlevo dle stavu, vpravo dle priority (poměr 3:1), přechod gradientem
-        self._status_color = STATUS_COLORS.get(status, "#ffffff")
+        self._status_color = status_color(node)
         p = node.meta.get("_priority")
         self._prio_color = PRIORITY_COLORS.get(p, "#eeeeee")
         self._apply_style()

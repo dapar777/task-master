@@ -32,10 +32,19 @@ STATUS_COLORS = {
     "todo": "#ffffff",
     "in_progress": "#cfe3ff",
     "waiting": "#ffe9c7",
-    "snoozed": "#ffe0f0",       # odložený úkol s běžícím odpočtem
+    "snoozed": "#ffe9c7",       # běžící odklad = čekající (patří k nim i řazením)
     "blocked": "#ffd6d6",
     "done": "#d4f5d4",
 }
+
+def status_color(node) -> str:
+    """Barva pozadí podle stavu.
+
+    Odklad má barvu čekajícího a po doběhnutí ji SI PONECHÁ – že vypršel,
+    dává najevo pozice nahoře a text („Čas vypršel"), ne změna barvy.
+    Jediné místo, kde se barva určuje: karty i strom ji berou odsud.
+    """
+    return STATUS_COLORS.get(node.meta.get("_status", ""), "#ffffff")
 
 
 def _priority_color(p: int) -> str:

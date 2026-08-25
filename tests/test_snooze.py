@@ -173,7 +173,7 @@ check(f"skupina = elapsed ({ELAPSED_GROUP_INDEX})",
 check(f"je první v pořadí ({order()[:2]})", order()[0] == "Odloz")
 card = win.card_view._cards.get(str(node("Odloz").path))
 check("karta hlásí vypršení", card is not None and "vypršelo" in card.countdown.text())
-check("strom hlásí vypršení", "vypršelo" in _status_text(node("Odloz")))
+check("strom hlásí vypršení", "vypršel" in _status_text(node("Odloz")))
 
 print("8) Obnovit spustí stejný interval znovu")
 win._resume_snoozed(node("Odloz"))
@@ -268,6 +268,26 @@ settle()
 check("termín v minulosti = doběhlý", past.snooze_elapsed())
 check("řadí se mezi doběhlé nahoru",
       win._group_index(past) == ELAPSED_GROUP_INDEX)
+
+print("16) Barva: odklad vypadá jako čekající, i po doběhnutí")
+from app.constants import STATUS_COLORS, status_color  # noqa: E402
+from app.cardview import _props_text  # noqa: E402
+
+running = node("Ceka1")
+running.set_snooze(3600)
+elapsed = node("Odloz")
+check("běžící odklad má barvu čekajícího",
+      status_color(running) == STATUS_COLORS["waiting"])
+check("nemá barvu blokovaného",
+      status_color(running) != STATUS_COLORS["blocked"])
+elapsed.set_snooze(1)
+time.sleep(1.2)
+check("doběhlý si barvu ponechá (nemění se)",
+      status_color(elapsed) == STATUS_COLORS["waiting"])
+check("že vypršel, říká text – ne barva",
+      "vypršel" in _status_text(elapsed) and "vypršel" in _props_text(elapsed))
+check("doběhlý už netvrdí, že čeká",
+      STATUSES["snoozed"] not in _status_text(elapsed))
 
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))

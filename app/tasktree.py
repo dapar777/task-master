@@ -13,9 +13,9 @@ from PySide6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 from .constants import (
     PRIORITIES,
     PRIORITY_COLORS,
-    STATUS_COLORS,
     STATUS_ORDER,
     STATUSES,
+    status_color,
 )
 from .storage import TaskNode
 
@@ -82,12 +82,16 @@ def _status_text(node) -> str:
     status = node.meta.get("_status", "")
     text = STATUSES.get(status, str(status))
     if status == "snoozed":
+        # po doběhnutí úkol technicky zůstává „snoozed" (kvůli tlačítku
+        # Obnovit), ale uživateli to tak nesmí vypadat – ukaž skutečnost
         rem = node.snooze_remaining()
         if rem is None:
-            text += "  ⏰ bez termínu"
+            text = "⏰ Čas vypršel  (bez termínu)"
+        elif rem <= 0:
+            text = "⏰ Čas vypršel"
         else:
             from .taskdialog import format_duration
-            text += "  ⏰ vypršelo" if rem <= 0 else f"  ⏳ {format_duration(rem)}"
+            text += f"  ⏳ {format_duration(rem)}"
     if node.blocked_by:
         text += " ⛔"
     elif node.auto_blocked:
@@ -273,8 +277,7 @@ class TaskTreeWidget(QTreeWidget):
         priority = node.meta.get("_priority", "")
         item.setText(1, _status_text(node))
         item.setText(2, str(PRIORITIES.get(priority, priority)))
-        if status in STATUS_COLORS:
-            item.setBackground(1, QBrush(QColor(STATUS_COLORS[status])))
+        item.setBackground(1, QBrush(QColor(status_color(node))))
         if priority in PRIORITY_COLORS:
             item.setBackground(2, QBrush(QColor(PRIORITY_COLORS[priority])))
 
