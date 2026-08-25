@@ -83,9 +83,11 @@ def _status_text(node) -> str:
     text = STATUSES.get(status, str(status))
     if status == "snoozed":
         rem = node.snooze_remaining()
-        if rem is not None:
+        if rem is None:
+            text += "  ⏰ bez termínu"
+        else:
             from .taskdialog import format_duration
-            text += f"  ⏰ vypršelo" if rem <= 0 else f"  ⏳ {format_duration(rem)}"
+            text += "  ⏰ vypršelo" if rem <= 0 else f"  ⏳ {format_duration(rem)}"
     if node.blocked_by:
         text += " ⛔"
     elif node.auto_blocked:

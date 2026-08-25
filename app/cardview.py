@@ -188,6 +188,14 @@ class CardWidget(QFrame):
             return
         rem = self.node.snooze_remaining()
         if rem is None:
+            # stav bez termínu (vybraný comboboxem) – ať to není prázdný odznak
+            self.countdown.setText("⏰ bez termínu")
+            self.countdown.setToolTip("Odklad nemá nastavený čas – nastav ho znovu")
+            self.countdown.setStyleSheet(
+                "background:#ffd9d9; color:#b02020;"
+                "border:1px solid #e08080; border-radius:9px;"
+                "padding:0px 7px; font-size:11px; font-weight:bold;"
+            )
             return
         if rem > 0:
             self.countdown.setText(f"⏳ {format_duration(rem)}")

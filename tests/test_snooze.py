@@ -209,6 +209,66 @@ win._undo()
 settle()
 check("undo vrátilo původní stav", node("Ceka1").meta.get("_status") == before)
 
+print("12) Stav bez termínu (combobox v dialogu úkolu) neuvázne")
+# „Čeká do…" jde vybrat i comboboxem, kde se na interval nikdo nezeptá –
+# takový úkol nesmí zůstat viset s nefunkčním odpočtem
+lost = node("Ceka2")
+lost.set_field("_status", "snoozed")
+lost.clear_snooze()
+win._populate()
+settle()
+check("bez termínu se počítá jako doběhlý", lost.snooze_elapsed())
+check("řadí se nahoru mezi doběhlé",
+      win._group_index(lost) == ELAPSED_GROUP_INDEX)
+card = win.card_view._cards.get(str(lost.path))
+check("karta to říká místo prázdného odznaku",
+      card is not None and "bez termínu" in card.countdown.text())
+check("strom to říká taky", "bez termínu" in _status_text(lost))
+check("nabídne tlačítko Obnovit",
+      card is not None and card.resume_btn is not None)
+win._resume_snoozed(lost)
+settle()
+check("Obnovit mu dá termín z poslední volby uživatele",
+      lost.snooze_until is not None and not lost.snooze_elapsed())
+
+print("13) Nový stav je i ve filtru")
+from app.filterpanel import FilterPanel  # noqa: E402
+
+fp = FilterPanel()
+labels = [fp.status_box.itemText(i) for i in range(fp.status_box.count())]
+check("filtr nabízí „Čeká do…“", STATUSES["snoozed"] in labels)
+fp.status_box.set_checked_data(["snoozed"])
+check("filtruje odložené", fp.matches(node("Odloz")))
+check("nepustí běžné úkoly", not fp.matches(node("Hotov")))
+fp.close()
+
+print("14) Odpočet přežije restart aplikace")
+# termín se ukládá absolutně do YAML, ne jako zbývající čas
+fresh_ws = Workspace(tmp)
+fresh_ws.load()
+again = next((n for n in fresh_ws.all_nodes()
+              if n.title == "Odloz"), None)
+check("úkol je po načtení z disku pořád odložený",
+      again is not None and again.meta.get("_status") == "snoozed")
+check("termín zůstal zachovaný",
+      again is not None and again.snooze_until is not None)
+check("délka pro Obnovit zůstala",
+      again is not None and again.snooze_secs > 0)
+
+print("15) Odklad doběhlý za vypnuté aplikace je po startu nahoře")
+from datetime import datetime as _dt, timedelta as _td  # noqa: E402
+
+past = node("Blok")
+past.meta["_status"] = "snoozed"
+past.meta["_snooze_until"] = (_dt.now() - _td(days=1)).isoformat(timespec="seconds")
+past.meta["_snooze_secs"] = 3600
+past.save_meta()
+win._populate()
+settle()
+check("termín v minulosti = doběhlý", past.snooze_elapsed())
+check("řadí se mezi doběhlé nahoru",
+      win._group_index(past) == ELAPSED_GROUP_INDEX)
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

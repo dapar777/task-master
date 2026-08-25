@@ -1681,7 +1681,10 @@ class MainWindow(QMainWindow):
 
     def _resume_snoozed(self, node) -> None:
         """Tlačítko Obnovit: odloží znovu o stejný interval jako minule."""
-        secs = node.snooze_secs or 600
+        # bez uložené délky (stav vybraný comboboxem) padni na uživatelovu
+        # poslední volbu, ne na tvrdou konstantu
+        d, h, m = self._last_snooze
+        secs = node.snooze_secs or (d * 86400 + h * 3600 + m * 60) or 600
         self.undo.push_fields([(node.task_id, node.meta)])
         node.set_snooze(secs)
         self.status.showMessage(

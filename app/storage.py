@@ -344,9 +344,18 @@ class TaskNode:
         return (until - (now or datetime.now())).total_seconds()
 
     def snooze_elapsed(self, now: "datetime | None" = None) -> bool:
-        """Doběhl odklad? (úkol volá po akci a řadí se úplně nahoru)"""
+        """Doběhl odklad? (úkol volá po akci a řadí se úplně nahoru)
+
+        Úkol ve stavu „čeká do…" BEZ termínu (jde nastavit i comboboxem
+        v dialogu úkolu) se počítá jako doběhlý – jinak by uvázl: odpočet
+        neběží, nikdy nevyprší a nenabídne se ani tlačítko Obnovit.
+        """
+        if self.meta.get("_status") != "snoozed":
+            return False
         rem = self.snooze_remaining(now)
-        return rem is not None and rem <= 0
+        if rem is None:
+            return True  # bez termínu = rovnou volá po akci
+        return rem <= 0
 
     def set_snooze(self, seconds: int) -> None:
         """Odloží úkol o `seconds`; délku si pamatuje pro opakování."""
