@@ -516,6 +516,25 @@ class CardView(QScrollArea):
         if card is not None:
             self.cardSelected.emit(card.node)
 
+    def contextMenuEvent(self, event):
+        """Klávesa kontextového menu (Menu / Shift+F10) i v Bez rušení.
+
+        Karta sama událost dostane jen když má fokus, jenže ten drží tento
+        scroll area – bez tohohle by klávesa v kartách nefungovala vůbec.
+        Menu se otevře u aktivní karty; když žádná není, událost pustíme dál.
+        """
+        card = self._cards.get(self._focus)
+        if card is None:
+            super().contextMenuEvent(event)
+            return
+        if event.reason() == event.Reason.Keyboard:
+            # u klávesy nemá kurzor smysl – ukaž menu u samotné karty
+            pos = card.mapToGlobal(card.rect().center())
+        else:
+            pos = event.globalPos()
+        self.cardContextMenu.emit(card.node, pos)
+        event.accept()
+
     def keyPressEvent(self, event):
         key = event.key()
         extend = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)

@@ -275,3 +275,4 @@ výběr a pohled**:
 | `test_status_menu.py` | stav jde nastavit z menu i v Bez rušení |
 | `test_sequence.py` | sekvence: řetěz blokování, dialog, postupné odemykání |
 | `test_snooze.py` | odklad: odpočet, obnovení, řazení doběhlých nahoru |
+| `test_context_key.py` | klávesa kontextového menu ve stromu, seznamu i kartách |
