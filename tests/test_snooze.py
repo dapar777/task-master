@@ -335,6 +335,40 @@ check("před ním stojí jen další doběhlé",
       all(win._group_index(node(t)) == ELAPSED_GROUP_INDEX
           for t in shown[:shown.index(target2.title)]))
 
+print("18) Odklad se pro auto-blokování chová jako „Čeká“")
+par = win.workspace.create_root("Rodic ab")
+win.workspace.create_child_of(par, "Sub1")
+win.workspace.create_child_of(par, "Sub2")
+win.workspace.load()
+win._populate()
+settle()
+par = node("Rodic ab")
+node("Sub1").set_field("_status", "waiting")
+node("Sub2").set_snooze(3600)
+check("čekající + běžící odklad rodiče blokují", par.should_auto_block())
+node("Sub1").set_snooze(3600)
+check("dva běžící odklady taky", par.should_auto_block())
+node("Sub2").set_snooze(1)
+time.sleep(1.2)
+check("doběhlý odklad rodiče už neblokuje (volá po akci)",
+      not par.should_auto_block())
+node("Sub2").set_field("_status", "todo")
+check("zpracovatelný podúkol taky ne", not par.should_auto_block())
+
+# a přes aplikaci: kaskáda i odblokování
+node("Sub1").set_field("_status", "waiting")
+node("Sub2").set_snooze(1)
+win._populate()
+settle()
+check("rodič se automaticky zablokoval",
+      node("Rodic ab").meta.get("_status") == "blocked"
+      and node("Rodic ab").auto_blocked)
+time.sleep(1.2)
+win._tick_snooze()
+settle()
+check("po vypršení odkladu se rodič odblokoval",
+      node("Rodic ab").meta.get("_status") != "blocked")
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

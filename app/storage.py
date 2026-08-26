@@ -94,6 +94,14 @@ def unique_dirname(parent: Path, base: str) -> str:
     return candidate
 
 
+def _blocks_parent(node) -> bool:
+    """Brání tento nedokončený podúkol práci na rodiči? (viz should_auto_block)"""
+    status = node.meta.get("_status")
+    if status == "snoozed":
+        return not node.snooze_elapsed()  # doběhlý odklad už čekáním není
+    return status in ("waiting", "blocked")
+
+
 class TaskNode:
     """Jeden úkol = jeden adresář na disku."""
 
@@ -383,14 +391,17 @@ class TaskNode:
         """Má se task automaticky zablokovat?
 
         Ano, právě když má aspoň jeden nedokončený PŘÍMÝ podúkol a všechny jeho
-        nedokončené přímé podúkoly jsou ve stavu „čeká" nebo „blokováno".
+        nedokončené přímé podúkoly čekají nebo blokují.
+
+        Odložený podúkol („čeká do…") se bere jako čekající – dokud odpočet
+        běží, opravdu se na něm nedá pracovat. Jakmile ale vyprší, úkol volá
+        po akci, takže rodiče blokovat nemá.
         """
         pending = [c for c in self.children
                    if c.meta.get("_status") != "done"]
         if not pending:
             return False
-        return all(c.meta.get("_status") in ("waiting", "blocked")
-                   for c in pending)
+        return all(_blocks_parent(c) for c in pending)
 
     def set_order(self, value: float) -> None:
         """Nastaví vlastní pořadí (float) bez změny času úpravy."""
