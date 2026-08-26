@@ -289,6 +289,52 @@ check("že vypršel, říká text – ne barva",
 check("doběhlý už netvrdí, že čeká",
       STATUSES["snoozed"] not in _status_text(elapsed))
 
+print("17) Doběhlý odklad nezmizí kvůli filtru")
+# Typický případ: v Bez rušení je nastavený filtr na aktivní stavy. Odložený
+# úkol se schová (správně – čeká), ale po doběhnutí se MUSÍ objevit, jinak
+# uživateli prostě zmizí místo aby vyskočil nahoru.
+from app.filterpanel import FilterPanel  # noqa: E402
+
+fp2 = FilterPanel()
+fp2.status_box.set_checked_data(["todo", "in_progress"])
+running2 = node("Ceka2")
+running2.set_snooze(3600)
+check("běžící odklad je filtrem schovaný", not fp2.matches(running2))
+running2.set_snooze(1)
+time.sleep(1.2)
+check("doběhlý odklad filtr propustí", fp2.matches(running2))
+
+fp2.status_box.set_checked_data(["waiting"])
+running2.set_snooze(3600)
+check("filtr Ceka nebere bezici odklad", not fp2.matches(running2))
+fp2.status_box.set_checked_data(["snoozed"])
+check("filtr Ceka-do ho vezme", fp2.matches(running2))
+fp2.close()
+
+# a totéž přes okno: po doběhnutí se objeví nahoře, i když je filtr aktivní
+win.filter_panel.status_box.set_checked_data(["todo", "in_progress"])
+target2 = node("Ceka1")
+target2.set_snooze(1)
+win._current_node = node("Akt")   # ať odložený není držený jako aktivní
+win._populate()
+settle()
+check("během odkladu je z pohledu pryč",
+      str(target2.path) not in win.card_view._order)
+time.sleep(1.2)
+win._tick_snooze()
+settle()
+by_path = {str(n.path): n.title for n in win.workspace.all_nodes()}
+shown = [by_path[p] for p in win.card_view._order if p in by_path]
+# nahoře může být víc doběhlých (každý doběhl jindy) – podstatné je, že se
+# vrátil do pohledu a je ve skupině doběhlých, ne že je úplně první
+check(f"po doběhnutí je zpátky v pohledu ({shown[:3]})",
+      target2.title in shown)
+check("a je ve skupině doběhlých nahoře",
+      win._group_index(target2) == ELAPSED_GROUP_INDEX)
+check("před ním stojí jen další doběhlé",
+      all(win._group_index(node(t)) == ELAPSED_GROUP_INDEX
+          for t in shown[:shown.index(target2.title)]))
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

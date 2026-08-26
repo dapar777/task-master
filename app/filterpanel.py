@@ -302,12 +302,25 @@ class FilterPanel(QWidget):
             "flag": self.flag_combo.currentData(),
         }
 
+    @staticmethod
+    def _status_matches(node, wanted) -> bool:
+        """Vyhovuje stav úkolu filtru?
+
+        Doběhlý odklad si technicky drží stav „snoozed" (kvůli tlačítku
+        Obnovit), ale už nečeká – volá po akci. Nesmí tedy zmizet z pohledu
+        jen proto, že uživatel filtruje na aktivní stavy; bere se jako „todo".
+        """
+        status = node.meta.get("_status")
+        if status == "snoozed" and node.snooze_elapsed():
+            return "todo" in wanted or "snoozed" in wanted
+        return status in wanted
+
     def matches(self, node) -> bool:
         f = self.current_filters()
         meta = node.meta
         if f["name"] and f["name"] not in node.title.lower():
             return False
-        if f["statuses"] and meta.get("_status") not in f["statuses"]:
+        if f["statuses"] and not self._status_matches(node, f["statuses"]):
             return False
         try:
             p = int(meta.get("_priority", 5))
