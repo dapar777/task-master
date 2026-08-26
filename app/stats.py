@@ -213,12 +213,20 @@ class StatsDialog(QDialog):
             summ.addWidget(wrap, r, c)
 
         st = s["by_status"]
+        # dlaždice se generují ze STATUSES, ať nový stav nezmizí z přehledu
+        _STATUS_TILE_COLORS = {
+            "done": "#2e9e4f",
+            "in_progress": "#1a6fd6",
+            "todo": "#1c1c1c",
+            "waiting": "#c07a1a",
+            "snoozed": "#c07a1a",
+            "blocked": "#c0392b",
+        }
+        _TILE_ORDER = ("done", "in_progress", "todo", "waiting", "snoozed", "blocked")
         cell(0, 0, "Úkolů celkem", s["total"])
-        cell(0, 1, STATUSES["done"], st.get("done", 0), "#2e9e4f")
-        cell(0, 2, STATUSES["in_progress"], st.get("in_progress", 0), "#1a6fd6")
-        cell(0, 3, STATUSES["todo"], st.get("todo", 0))
-        cell(0, 4, STATUSES["waiting"], st.get("waiting", 0), "#c07a1a")
-        cell(0, 5, STATUSES["blocked"], st.get("blocked", 0), "#c0392b")
+        for i, key in enumerate(k for k in _TILE_ORDER if k in STATUSES):
+            cell(0, i + 1, STATUSES[key], st.get(key, 0),
+                 _STATUS_TILE_COLORS.get(key, "#1c1c1c"))
         cell(1, 0, "Založené dnes", s["today_created"], "#4f7cff")
         cell(1, 1, "Uzavřené dnes", s["today_completed"], "#2e9e4f")
         cell(1, 2, "Založené 7 dní", s["w_created"], "#4f7cff")

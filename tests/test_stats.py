@@ -102,6 +102,25 @@ try:
 except Exception as e:  # noqa: BLE001
     check(f"poškozená data bez pádu ({type(e).__name__}: {e})", False)
 
+print("6) Přehled má dlaždici pro každý stav")
+# dlaždice se dřív vypisovaly ručně, takže nový stav v přehledu chyběl
+from PySide6.QtWidgets import QLabel  # noqa: E402
+
+from app.constants import STATUSES  # noqa: E402
+
+node("Ukol 2").set_snooze(3600)
+ws.load()
+dlg = StatsDialog(list(ws.all_nodes()), None)
+dlg.resize(800, 600)
+dlg.show()
+app.processEvents()
+shown = {lbl.text() for lbl in dlg.findChildren(QLabel)}
+missing = [v for v in STATUSES.values() if v not in shown]
+check(f"žádný stav v přehledu nechybí ({missing})", not missing)
+stats = compute_stats(list(ws.all_nodes()))
+check("odložené se počítají", stats["by_status"].get("snoozed") == 1)
+dlg.close()
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)
