@@ -369,6 +369,40 @@ settle()
 check("po vypršení odkladu se rodič odblokoval",
       node("Rodic ab").meta.get("_status") != "blocked")
 
+print("19) Doběhlý odklad sám podléhá auto-blokaci")
+# task1 s vypršelým intervalem a jediným čekajícím podúkolem se musí
+# automaticky zablokovat – po vypršení už je to normální úkol k řešení
+t1 = win.workspace.create_root("task1")
+win.workspace.create_child_of(t1, "stask1")
+win.workspace.load()
+win._populate()
+settle()
+node("stask1").set_field("_status", "waiting")
+node("task1").set_snooze(1)
+win._populate()
+settle()
+check("během intervalu zůstává odložený",
+      node("task1").meta.get("_status") == "snoozed")
+time.sleep(1.2)
+win._tick_snooze()
+settle()
+check("po vypršení se automaticky zablokoval",
+      node("task1").meta.get("_status") == "blocked")
+check("a je označený jako automatický", node("task1").auto_blocked)
+check("termín odkladu se zahodil", node("task1").snooze_until is None)
+
+node("stask1").set_field("_status", "todo")
+win._populate()
+settle()
+check("rozpracováním podúkolu se zase odblokoval",
+      node("task1").meta.get("_status") != "blocked")
+
+node("stask1").set_field("_status", "blocked")
+win._populate()
+settle()
+check("blokovaný podúkol ho zablokuje taky",
+      node("task1").meta.get("_status") == "blocked")
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

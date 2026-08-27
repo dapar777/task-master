@@ -1218,8 +1218,14 @@ class MainWindow(QMainWindow):
                 if st == "done":
                     continue
                 if n.should_auto_block():
-                    # zablokuj jen aktivní (todo/probíhá) – ruční blocked nech být
-                    if st in ("todo", "in_progress"):
+                    # Zablokuj jen úkoly, na kterých by se dalo pracovat: aktivní
+                    # a doběhlé odklady (ty už nečekají, volají po akci – takže
+                    # i na ně musí auto-blok dosáhnout). Ruční „blokováno"
+                    # i běžící odklad nech být.
+                    if st in ("todo", "in_progress") or (
+                        st == "snoozed" and n.snooze_elapsed()
+                    ):
+                        n.clear_snooze()  # odpočet doběhl, termín už neplatí
                         n.set_field("_status", "blocked")
                         n.meta["_auto_blocked"] = True
                         n.save_meta()
