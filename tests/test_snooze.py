@@ -403,6 +403,29 @@ settle()
 check("blokovaný podúkol ho zablokuje taky",
       node("task1").meta.get("_status") == "blocked")
 
+print("20) Po opuštění stavu se evidence doběhlých uklidí")
+# tick dřív končil hned, když žádný odložený úkol nezbyl – zápis o doběhlých
+# tak zůstal viset a časovač přebudovával zobrazení pořád dokola
+# Pozn.: tahle kontrola je slabší – v sadě zbývají jiné doběhlé úkoly, takže
+# sama o sobě regresi nechytí. Drží ale popsané chování pro budoucí úpravy.
+# Ostatní evidované být můžou; podstatné je, že zablokovaný task1 mezi nimi není.
+tracked = getattr(win, "_elapsed_paths", set())
+check("zablokovaný úkol už není evidovaný jako doběhlý",
+      str(node("task1").path) not in tracked)
+
+rebuilds = {"n": 0}
+_orig_pop = type(win)._populate
+type(win)._populate = lambda self: (rebuilds.__setitem__("n", rebuilds["n"] + 1),
+                                    _orig_pop(self))[1]
+try:
+    for _ in range(3):
+        win._tick_snooze()
+        app.processEvents()
+    check(f"klidné tiky nepřebudovávají zobrazení ({rebuilds['n']})",
+          rebuilds["n"] == 0)
+finally:
+    type(win)._populate = _orig_pop
+
 print()
 print("SELHALO: " + (", ".join(fails) if fails else "nic – vše prošlo"))
 sys.exit(1 if fails else 0)

@@ -1668,15 +1668,16 @@ class MainWindow(QMainWindow):
             return
         snoozed = [n for n in self.workspace.all_nodes()
                    if n.meta.get("_status") == "snoozed"]
-        if not snoozed:
-            return
         elapsed_now = {str(n.path) for n in snoozed if n.snooze_elapsed()}
         if elapsed_now != getattr(self, "_elapsed_paths", set()):
-            # něco právě doběhlo (nebo bylo obnoveno) – přeskládej skupiny
+            # něco doběhlo, bylo obnoveno nebo přešlo do jiného stavu (třeba
+            # auto-blokací) – přeskládej skupiny. Porovnává se i při prázdném
+            # seznamu, jinak by zápis o doběhlých zůstal viset navždy.
             self._elapsed_paths = elapsed_now
             self._populate()
             return
-        self._refresh_countdowns(snoozed)
+        if snoozed:
+            self._refresh_countdowns(snoozed)
 
     def _refresh_countdowns(self, snoozed) -> None:
         """Přepíše zbývající čas na kartách i ve stromu bez přebudování."""
