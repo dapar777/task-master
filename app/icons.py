@@ -46,6 +46,17 @@ _PATHS: dict[str, tuple[str, bool]] = {
     "subtasks": ('<path d="M6 4v8a3 3 0 003 3h9M14 11l4 4-4 4"/>', False),
     "hash": ('<path d="M5 9h14M5 15h14M10 3L8 21M16 3l-2 18"/>', False),
     "doc": ('<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>', False),
+    "copy": ('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/>', False),
+    "scissors": ('<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.5 15.5M8.5 8.5L20 20"/>', False),
+    "clipboard": ('<rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h2"/>', False),
+    "text": ('<path d="M4 6h16M4 12h10M4 18h14"/>', False),
+    "trash": ('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', False),
+    "undo": ('<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-2"/>', False),
+    "dot": ('<circle cx="12" cy="12" r="6"/>', True),
+    "chart": ('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', False),
+    "keyboard": ('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>', False),
+    "save": ('<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>', False),
+    "sliders": ('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', False),
 }
 
 _cache: dict[tuple, QPixmap] = {}

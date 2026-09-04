@@ -171,6 +171,10 @@ class MainWindow(QMainWindow):
         self.detail.navigateTo.connect(self._navigate_to)
         self.detail.addRefRequested.connect(self._add_ref_dialog)
 
+        # explicitní minima: splitter je bere místo (větších) hintů obsahu,
+        # takže okno jde zúžit; obsah se pak zkrátí/ořízne, ne okno zamkne
+        left.setMinimumWidth(120)
+        self.detail.setMinimumWidth(200)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(self.detail)
@@ -240,6 +244,8 @@ class MainWindow(QMainWindow):
         title = QLabel(APP_NAME)
         title.setFont(theme.title_font(12.5))
         title.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        self.header_title = title
+        self.header_layout = lay
         self.header_ws = QLabel("")
         self.header_ws.setObjectName("faintLabel")
         self.header_ws.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -286,11 +292,14 @@ class MainWindow(QMainWindow):
         if compact == self._header_compact:
             return
         self._header_compact = compact
+        self.header_title.setVisible(not compact)
+        self.header_layout.setSpacing(8 if compact else 12)
+        self.header_layout.setContentsMargins(10 if compact else 16, 8, 10 if compact else 16, 8)
         self.view_segment.set_compact(compact)
-        self.palette_btn.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonIconOnly if compact
-            else Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
+        style = (Qt.ToolButtonStyle.ToolButtonIconOnly if compact
+                 else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        for b in (self.palette_btn, self.criteria_btn, self.compact_btn):
+            b.setToolButtonStyle(style)
         self.new_btn.setText("" if compact else "Nový úkol")
 
     def _retheme_header(self) -> None:
@@ -323,7 +332,9 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.criteria_btn)
         self.sort_label = QLabel("")
         self.sort_label.setObjectName("hint")
-        lay.addWidget(self.sort_label)
+        self.sort_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.sort_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(self.sort_label, 1)
         self.compact_btn = IconButton("list", "Úsporné karty (Ctrl+Shift+E)",
                                       text="Úsporné karty", framed=True)
         self.compact_btn.setCheckable(True)
@@ -502,6 +513,34 @@ class MainWindow(QMainWindow):
         for cid, action in self.detail.editor.command_actions.items():
             self.shortcuts.register(cid, action)
             self.act[cid] = action
+        self._apply_menu_icons()
+
+    # ikony příkazů v menu a kontextových nabídkách (kreslené, v barvě tématu)
+    MENU_ICONS = {
+        "task.new": "plus", "task.new_sub": "subtasks", "task.copy": "copy",
+        "task.cut": "scissors", "task.paste": "clipboard", "task.paste_text": "text",
+        "task.rename": "edit", "task.delete": "trash", "task.flag": "flag_outline",
+        "task.toggle_done": "check", "task.block_siblings": "ban",
+        "task.make_sequence": "link", "edit.undo": "undo",
+        "app.open_workspace": "folder", "app.save": "save", "app.refresh": "rotate",
+        "app.stats": "chart", "app.command_palette": "command", "app.shortcuts": "keyboard",
+        "view.tree": "tree", "view.list": "list", "view.cards": "cards",
+        "view.compact_cards": "sliders", "view.dark_theme": "moon",
+        "filter.save": "bookmark", "focus.filter": "search",
+    }
+
+    def _apply_menu_icons(self) -> None:
+        for cid, name in self.MENU_ICONS.items():
+            act = self.act.get(cid)
+            if act is not None:
+                act.setIcon(icons.icon(name, 16))
+
+    @staticmethod
+    def _polish_menu(menu: QMenu) -> QMenu:
+        """Zaoblené rohy popupu: bez průhledného pozadí by rohy zůstaly hranaté."""
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.NoDropShadowWindowHint)
+        return menu
 
     def _build_menus(self) -> None:
         mb = self.menuBar()
@@ -566,6 +605,8 @@ class MainWindow(QMainWindow):
         m_settings.addSeparator()
         m_settings.addAction(self.act["app.command_palette"])
         m_settings.addAction(self.act["app.shortcuts"])
+        for m in mb.findChildren(QMenu):
+            self._polish_menu(m)
 
     # ------------------------------------------------------------------
     # Téma
@@ -584,6 +625,7 @@ class MainWindow(QMainWindow):
             if callable(hook):
                 hook()
         self._retheme_header()
+        self._apply_menu_icons()
         if self.workspace:
             self._populate()
             if self._current_node is not None:
@@ -1115,7 +1157,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Vloženo úkolů: {len(created_ids)}", 2000)
 
     def _show_tree_menu(self, pos) -> None:
-        menu = QMenu(self)
+        menu = self._polish_menu(QMenu(self))
         node = self._current_node
         if node is not None:  # stejná podnabídka jako na kartách
             menu.addMenu(self._build_status_menu(node, menu))
@@ -1132,9 +1174,9 @@ class MainWindow(QMainWindow):
 
     def _build_card_menu(self, node) -> QMenu:
         """Sestaví kontextové menu pro kartu (bez zobrazení – kvůli testům)."""
-        menu = QMenu(self)
+        menu = self._polish_menu(QMenu(self))
         # editace = otevřít úkol v editoru (přepne do stromu a dá fokus editoru)
-        open_act = menu.addAction("✎ Otevřít v editoru")
+        open_act = menu.addAction(icons.icon("edit", 16), "Otevřít v editoru")
         open_act.triggered.connect(lambda: self._on_card_opened(node))
         menu.addSeparator()
         # stav rovnou z karty – v Bez rušení není vidět combobox v detailu
@@ -1168,7 +1210,8 @@ class MainWindow(QMainWindow):
         """Položky se stavy do `menu`; aktuální stav je zaškrtnutý."""
         current = node.meta.get("_status", "")
         for key in STATUS_ORDER:
-            act = menu.addAction(STATUSES[key])
+            # barevná tečka stavu (stejná jako v chipech), aktuální zaškrtnutý
+            act = menu.addAction(icons.icon("dot", 12, theme.status_style(key)[2]), STATUSES[key])
             act.setCheckable(True)
             act.setChecked(key == current)
             act.triggered.connect(
@@ -1182,7 +1225,8 @@ class MainWindow(QMainWindow):
         hromadné operace). Blokováno se doptá na blokující úkol, Hotovo se
         u úkolu s nedokončenými podúkoly zeptá – obojí řeší _apply_status_to.
         """
-        sub = QMenu("Stav", parent_menu)
+        sub = self._polish_menu(QMenu("Stav", parent_menu))
+        sub.setIcon(icons.icon("dot", 12, theme.status_style(node)[2]))
         self._add_status_actions(sub, node)
         return sub
 

@@ -202,6 +202,13 @@ _CHEVRON_SVG = (
 )
 
 
+_CHEVRON_RIGHT_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="{c}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M9 6l6 6-6 6"/></svg>'
+)
+
+
 def _asset_dir() -> Path:
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation) or tempfile.gettempdir()
     d = Path(base) / "taskmaster-theme"
@@ -222,6 +229,7 @@ def _write_asset(name: str, content: str) -> str:
 def build_qss(t: Tokens) -> str:
     check = _write_asset(f"check-{t.name}.svg", _CHECK_SVG.format(c=t.accent_fg))
     chevron = _write_asset(f"chevron-{t.name}.svg", _CHEVRON_SVG.format(c=t.text2))
+    chevron_right = _write_asset(f"chevron-right-{t.name}.svg", _CHEVRON_RIGHT_SVG.format(c=t.text2))
     sel_tint = mix(t.accent, t.paper, 0.10)
     green = t.status_dot["done"]
     return f"""
@@ -233,12 +241,16 @@ QToolTip {{ background: {t.text}; color: {t.canvas}; border: 0; border-radius: 6
 QMenuBar {{ background: {t.panel}; border-bottom: 1px solid {t.line}; padding: 1px 6px; }}
 QMenuBar::item {{ padding: 4px 8px; border-radius: 6px; background: transparent; }}
 QMenuBar::item:selected {{ background: {t.hover}; }}
-QMenu {{ background: {t.paper}; border: 1px solid {t.border}; border-radius: 8px; padding: 6px; }}
-QMenu::item {{ padding: 6px 28px 6px 12px; border-radius: 6px; }}
-QMenu::item:selected {{ background: {sel_tint}; }}
+QMenu {{ background: {t.paper}; border: 1px solid {t.border}; border-radius: 10px; padding: 6px; }}
+QMenu::item {{ padding: 6px 28px 6px 10px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {sel_tint}; color: {t.text}; }}
 QMenu::item:disabled {{ color: {t.muted}; }}
 QMenu::separator {{ height: 1px; background: {t.line}; margin: 6px 8px; }}
+QMenu::icon {{ padding-left: 6px; }}
+QMenu::icon:checked {{ background: {sel_tint}; border: 1px solid {t.accent}; border-radius: 5px; }}
 QMenu::indicator {{ width: 14px; height: 14px; left: 8px; }}
+QMenu::indicator:non-exclusive:checked, QMenu::indicator:exclusive:checked {{ image: url("{check}"); background: {green}; border-radius: 4px; }}
+QMenu::right-arrow {{ image: url("{chevron_right}"); width: 12px; height: 12px; right: 8px; }}
 
 QStatusBar {{ background: {t.panel}; border-top: 1px solid {t.line}; color: {t.text2}; }}
 QStatusBar::item {{ border: 0; }}
@@ -271,9 +283,10 @@ QLabel#hint {{ color: {t.text2}; }}
 QFrame#hline {{ background: {t.line}; max-height: 1px; min-height: 1px; border: 0; }}
 
 QTreeWidget, QTreeView, QListWidget, QListView {{
-  background: {t.paper}; border: 1px solid {t.line}; border-radius: 8px; outline: 0;
-  alternate-background-color: {t.paper}; show-decoration-selected: 1; padding: 2px;
+  background: {t.card}; border: 1px solid {t.line}; border-radius: 8px; outline: 0;
+  alternate-background-color: {t.card}; show-decoration-selected: 1; padding: 2px;
 }}
+QTextEdit, QPlainTextEdit {{ background: {t.paper}; }}
 QTreeWidget::item, QListWidget::item {{ padding: 3px 4px; border-radius: 6px; }}
 QTreeWidget::item:hover, QListWidget::item:hover {{ background: {t.hover}; }}
 QTreeWidget::item:selected, QListWidget::item:selected {{ background: {t.selection}; color: {t.text}; }}
