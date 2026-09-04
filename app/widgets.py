@@ -247,6 +247,16 @@ class SegmentedControl(QFrame):
                 self.changed.emit(k)
                 return
 
+    def set_compact(self, compact: bool) -> None:
+        """Úzké okno: jen ikony (popisek zůstává v tooltipu)."""
+        style = (Qt.ToolButtonStyle.ToolButtonIconOnly if compact
+                 else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        for k, b in self._buttons.items():
+            if k in self._icons:
+                b.setToolButtonStyle(style)
+                if compact and not b.toolTip():
+                    b.setToolTip(b.text())
+
     def retheme(self) -> None:
         for k, name in self._icons.items():
             self._buttons[k].setIcon(icons.icon(name, 14))

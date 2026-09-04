@@ -353,9 +353,11 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 QScrollArea {{ border: 0; background: transparent; }}
 
-QSlider::groove:horizontal {{ height: 4px; background: {t.line}; border-radius: 2px; }}
+QSlider {{ min-height: 22px; }}
+QSlider::groove:horizontal {{ height: 4px; background: {t.line}; border-radius: 2px; margin: 0 9px; }}
 QSlider::sub-page:horizontal {{ background: {t.accent}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ background: {t.paper}; border: 2px solid {t.accent}; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }}
+QSlider::handle:horizontal {{ background: {t.paper}; border: 2px solid {t.accent}; width: 14px; height: 14px; margin: -7px -9px; border-radius: 9px; }}
+QSlider::handle:horizontal:hover {{ background: {t.hover}; }}
 
 QDialogButtonBox QPushButton {{ min-width: 84px; }}
 QTabBar::tab {{ padding: 6px 12px; }}

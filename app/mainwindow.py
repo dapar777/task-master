@@ -223,7 +223,10 @@ class MainWindow(QMainWindow):
         self.today_label.setToolTip("Dnes vytvořené / dokončené úkoly")
         self.status.addPermanentWidget(self.today_label)
         self.ws_label = QLabel("")
-        self.status.addPermanentWidget(self.ws_label)
+        # dlouhá cesta nesmí diktovat minimální šířku okna – smí se oříznout
+        self.ws_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.ws_label.setMinimumWidth(80)
+        self.status.addPermanentWidget(self.ws_label, 1)
 
     def _build_header(self) -> QWidget:
         bar = QFrame()
@@ -240,7 +243,6 @@ class MainWindow(QMainWindow):
         self.header_ws = QLabel("")
         self.header_ws.setObjectName("faintLabel")
         self.header_ws.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.header_ws.setMinimumWidth(60)
         brand = QHBoxLayout()
         brand.setSpacing(8)
         brand.addWidget(self.logo_label)
@@ -257,21 +259,39 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.view_segment)
 
         search = self.filter_panel.name_edit
-        search.setFixedWidth(260)
+        search.setMinimumWidth(60)
+        search.setMaximumWidth(320)
+        search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         search.setClearButtonEnabled(True)
         self._search_action = search.addAction(icons.icon("search"), QLineEdit.ActionPosition.LeadingPosition)
-        lay.addWidget(search)
+        lay.addWidget(search, 1)
 
-        palette_btn = IconButton("command", "Příkazová paleta (Ctrl+Shift+P)", text="Příkazy", framed=True)
-        palette_btn.clicked.connect(lambda: self.act["app.command_palette"].trigger())
-        lay.addWidget(palette_btn)
+        self.palette_btn = IconButton("command", "Příkazová paleta (Ctrl+Shift+P)", text="Příkazy", framed=True)
+        self.palette_btn.clicked.connect(lambda: self.act["app.command_palette"].trigger())
+        lay.addWidget(self.palette_btn)
 
-        new_btn = PrimaryButton("Nový úkol", "plus")
-        new_btn.setToolTip("Nový úkol (Ctrl+N)")
-        new_btn.clicked.connect(lambda: self.act["task.new"].trigger())
-        lay.addWidget(new_btn)
+        self.new_btn = PrimaryButton("Nový úkol", "plus")
+        self.new_btn.setToolTip("Nový úkol (Ctrl+N)")
+        self.new_btn.clicked.connect(lambda: self.act["task.new"].trigger())
+        lay.addWidget(self.new_btn)
         self._retheme_header()
+        self._header_compact = None
         return bar
+
+    HEADER_COMPACT_BELOW = 1100  # px: pod touto šířkou jen ikony v hlavičce
+
+    def _update_header_density(self) -> None:
+        """Úzké okno: přepínač a tlačítka v hlavičce jen s ikonami."""
+        compact = self.width() < self.HEADER_COMPACT_BELOW
+        if compact == self._header_compact:
+            return
+        self._header_compact = compact
+        self.view_segment.set_compact(compact)
+        self.palette_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonIconOnly if compact
+            else Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self.new_btn.setText("" if compact else "Nový úkol")
 
     def _retheme_header(self) -> None:
         t = theme.current()
@@ -288,15 +308,19 @@ class MainWindow(QMainWindow):
         lbl = QLabel("Filtr")
         lbl.setObjectName("faintLabel")
         lay.addWidget(lbl)
-        self.chip_row = QHBoxLayout()
+        # chipy v kontejneru, který se smí zúžit (jinak by dlouhý filtr
+        # vynucoval minimální šířku okna)
+        chips_host = QWidget()
+        chips_host.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.chip_row = QHBoxLayout(chips_host)
+        self.chip_row.setContentsMargins(0, 0, 0, 0)
         self.chip_row.setSpacing(6)
-        lay.addLayout(self.chip_row)
+        lay.addWidget(chips_host, 1)
         self.criteria_btn = IconButton("chevron_down", "Zobrazit/skrýt kritéria filtru",
                                        text="Kritéria", framed=True)
         self.criteria_btn.setCheckable(True)
         self.criteria_btn.toggled.connect(self._toggle_cards_criteria)
         lay.addWidget(self.criteria_btn)
-        lay.addStretch(1)
         self.sort_label = QLabel("")
         self.sort_label.setObjectName("hint")
         lay.addWidget(self.sort_label)
@@ -360,6 +384,7 @@ class MainWindow(QMainWindow):
             self.chip_row.addWidget(empty)
         for c in chips:
             self.chip_row.addWidget(c)
+        self.chip_row.addStretch(1)
         key, desc = self.filter_panel.current_sort()
         self.sort_label.setText(
             f"Řazení: <b>{SORT_OPTIONS.get(key, key)}</b> {'↓' if desc else '↑'}"
@@ -2343,6 +2368,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_orientation()
+        self._update_header_density()
 
     def _update_orientation(self) -> None:
         if not hasattr(self, "main_splitter"):

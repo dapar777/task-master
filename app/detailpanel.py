@@ -79,6 +79,9 @@ class FlagButton(IconButton):
 def _section(title: str, hint: str, buttons: list[IconButton]) -> tuple[QWidget, QVBoxLayout]:
     """Sekce spodního pásu: nadpis, nápověda, ikonová tlačítka; obsah doplní volající."""
     box = QWidget()
+    # sekce se smí zúžit pod svůj obsah – jinak by dvě vedle sebe (Soubory |
+    # Úkoly) diktovaly minimální šířku celého okna
+    box.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     v = QVBoxLayout(box)
     v.setContentsMargins(12, 8, 12, 8)
     v.setSpacing(4)
@@ -88,7 +91,8 @@ def _section(title: str, hint: str, buttons: list[IconButton]) -> tuple[QWidget,
     if hint:
         h = QLabel(hint)
         h.setObjectName("faintLabel")
-        head.addWidget(h)
+        h.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        head.addWidget(h, 1)
     head.addStretch(1)
     for b in buttons:
         head.addWidget(b)
@@ -145,8 +149,9 @@ class TaskDetailPanel(QWidget):
         # umožni úzké okno – widgety se smí zmenšit
         for _w in (self.status_combo, self.priority_combo, self.category_edit, self.tags_edit):
             _w.setMinimumWidth(46)
-        self.status_combo.setMinimumContentsLength(12)
-        self.priority_combo.setMinimumContentsLength(4)
+        for _c, _n in ((self.status_combo, 9), (self.priority_combo, 3)):
+            _c.setMinimumContentsLength(_n)
+            _c.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.category_edit.setMaximumWidth(160)
         self.tags_edit.setMaximumWidth(220)
 
