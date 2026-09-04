@@ -9,8 +9,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from app import theme
 from app.appicon import make_app_icon, save_icon_files
 from app.constants import APP_NAME, ORG_NAME
 from app.mainwindow import MainWindow
@@ -31,54 +33,13 @@ def _set_windows_app_id() -> None:
         pass
 
 
-APP_STYLESHEET = """
-QGroupBox {
-    font-weight: 600;
-    border: 1px solid #dcdcdc;
-    border-radius: 6px;
-    margin-top: 8px;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 8px;
-    padding: 0 4px;
-    color: #666;
-}
-QLineEdit, QSpinBox, QTextEdit {
-    border: 1px solid #cfcfcf;
-    border-radius: 4px;
-    padding: 2px 4px;
-    background: #ffffff;
-}
-/* QComboBox bez explicitního background: jinak „prosákne" do rozbaleného
-   seznamu a vybraná (aktuální) položka je bílá na bílém a není vidět. */
-QComboBox {
-    border: 1px solid #cfcfcf;
-    border-radius: 4px;
-    padding: 2px 4px;
-}
-QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
-    border: 1px solid #4f7cff;
-}
-QPushButton {
-    border: 1px solid #c9c9c9;
-    border-radius: 4px;
-    padding: 4px 10px;
-    background: #f6f6f6;
-}
-QPushButton:hover { background: #eef2ff; border-color: #4f7cff; }
-QToolBar { border: 0; spacing: 2px; padding: 2px; }
-QTreeWidget { border: 1px solid #dcdcdc; border-radius: 6px; }
-"""
-
-
 def main() -> int:
     _set_windows_app_id()
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    app.setStyleSheet(APP_STYLESHEET)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
+    # vzhled (Solarized světlé/tmavé) – jediný zdroj barev je app/theme.py
+    theme.apply(app, QSettings(ORG_NAME, APP_NAME).value("theme", "light", type=str))
 
     icon = make_app_icon()
     app.setWindowIcon(icon)

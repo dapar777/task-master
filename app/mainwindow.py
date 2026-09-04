@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import icons, theme
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import CommandPalette
@@ -282,6 +283,9 @@ class MainWindow(QMainWindow):
         # úsporné karty – přepínatelná akce (zkratka + klikátko v menu)
         ac = self._make("view.compact_cards", self._toggle_compact_cards, checkable=True)
         ac.setChecked(self._compact_cards)
+        # tmavé téma – přepínatelná akce, stav v QSettings (main.py ho čte při startu)
+        dk = self._make("view.dark_theme", self._toggle_theme, checkable=True)
+        dk.setChecked(self.settings.value("theme", "light", type=str) == "dark")
         # Navigace / fokus
         self._make("focus.filter", self._focus_filter)
         self._make("focus.tree", self._focus_tree)
@@ -332,6 +336,7 @@ class MainWindow(QMainWindow):
             m_view.addAction(self.act[cid])
         m_view.addAction(self.act["view.cycle"])
         m_view.addAction(self.act["view.compact_cards"])
+        m_view.addAction(self.act["view.dark_theme"])
         m_view.addSeparator()
         for cid in ("focus.filter", "focus.tree", "focus.editor", "focus.title", "focus.links"):
             m_view.addAction(self.act[cid])
@@ -356,6 +361,27 @@ class MainWindow(QMainWindow):
         m_settings.addSeparator()
         m_settings.addAction(self.act["app.command_palette"])
         m_settings.addAction(self.act["app.shortcuts"])
+
+    # ------------------------------------------------------------------
+    # Téma
+    # ------------------------------------------------------------------
+    def _toggle_theme(self, dark: bool) -> None:
+        name = "dark" if dark else "light"
+        self.settings.setValue("theme", name)
+        theme.apply(QApplication.instance(), name)
+        icons.clear_cache()
+        self._retheme()
+
+    def _retheme(self) -> None:
+        """Překreslí vše, co si barvy drží mimo QSS (ikony, chipy, karty)."""
+        for w in self.findChildren(QWidget):
+            hook = getattr(w, "retheme", None)
+            if callable(hook):
+                hook()
+        if self.workspace:
+            self._populate()
+            if self._current_node is not None:
+                self._select_in_view(self._current_node)
 
     # ------------------------------------------------------------------
     # Fokus / navigace klávesnicí
