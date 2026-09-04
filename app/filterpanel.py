@@ -42,6 +42,17 @@ class CheckableComboBox(QComboBox):
         self._model = QStandardItemModel(self)
         self.setModel(self._model)
         self.view().viewport().installEventFilter(self)
+        # Zaškrtnuté hodnoty se cachují: filtr se vyhodnocuje pro KAŽDÝ úkol
+        # a čtení stavu položek z Qt modelu bylo při stovkách úkolů většinou
+        # času přebudování. Cache se zneplatní signály modelu – ty projdou
+        # i při blockSignals() na comboboxu (apply_preset, reset).
+        self._checked_cache: list | None = None
+        for sig in (self._model.itemChanged, self._model.rowsInserted,
+                    self._model.rowsRemoved, self._model.modelReset):
+            sig.connect(self._invalidate_checked)
+
+    def _invalidate_checked(self, *_) -> None:
+        self._checked_cache = None
 
     def eventFilter(self, obj, event):
         if obj is self.view().viewport() and event.type() == QEvent.Type.MouseButtonRelease:
@@ -66,12 +77,13 @@ class CheckableComboBox(QComboBox):
         self._model.clear()
 
     def checked_data(self) -> list:
-        out = []
-        for i in range(self._model.rowCount()):
-            it = self._model.item(i)
-            if it.checkState() == Qt.CheckState.Checked:
-                out.append(it.data(DATA_ROLE))
-        return out
+        if self._checked_cache is None:
+            self._checked_cache = [
+                it.data(DATA_ROLE)
+                for it in (self._model.item(i) for i in range(self._model.rowCount()))
+                if it.checkState() == Qt.CheckState.Checked
+            ]
+        return list(self._checked_cache)  # kopie – volající si ji smí upravit
 
     def set_checked_data(self, values) -> None:
         vals = set(values or [])
@@ -315,8 +327,18 @@ class FilterPanel(QWidget):
             return "todo" in wanted or "snoozed" in wanted
         return status in wanted
 
-    def matches(self, node) -> bool:
+    def matcher(self):
+        """Funkce úkol -> bool s JEDNOU sejmutým filtrem.
+
+        Pro průchody přes všechny úkoly (přebudování zobrazení, zařazení
+        nového úkolu): matches() by jinak četl stav widgetů pro každý úkol
+        znovu a čas rostl s celkovým počtem úkolů, ne s počtem viditelných.
+        """
         f = self.current_filters()
+        return lambda node: self.matches(node, f)
+
+    def matches(self, node, filters: dict | None = None) -> bool:
+        f = filters if filters is not None else self.current_filters()
         meta = node.meta
         if f["name"] and f["name"] not in node.title.lower():
             return False

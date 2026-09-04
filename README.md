@@ -199,7 +199,17 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
   jinak Qt novou kartu na okamžik zobrazí jako samostatné okno mimo aplikaci.
 - **Pořadí úkolů** (`_order`) je globálně jedinečné už při vzniku. Kolize by
   přinutila `normalize_orders()` přepsat a uložit **všechny** úkoly, což navíc
-  zneplatní otisky karet a vynutí jejich kompletní přestavbu.
+  zneplatní otisky karet a vynutí jejich kompletní přestavbu. Totéž platí pro
+  zařazení nového či přesunutého úkolu (`_order_between`): pořadí se volí vůči
+  **všem** obsazeným hodnotám, ne jen sousedům ve výřezu (viditelné karty,
+  sourozenci) – jinak v Bez rušení s filtrem kolidovalo se skrytým úkolem
+  a každé další přidání přepisovalo celý strom.
+- **Filtr se vyhodnocuje z jednoho snímku** (`FilterPanel.matcher()`).
+  `matches()` volaný pro každý úkol četl stav widgetů (zaškrtnuté položky
+  Qt modelů) pořád znovu; při stovkách úkolů to byla většina času přebudování
+  a rostlo to s celkovým počtem úkolů, ne s počtem viditelných.
+  `CheckableComboBox` navíc zaškrtnuté hodnoty cachuje (zneplatnění signály
+  modelu, takže funguje i při `blockSignals()`).
 - **Strukturální operace nenačítají celý strom.** Přejmenování, přesun, mazání,
   vkládání i přeuspořádání udržují paměťový strom samy (`_rebase_children`,
   `move_under`, `create_subtree`), takže odpadá `load()` přes všechny úkoly.
@@ -229,6 +239,7 @@ app/
   detailpanel.py        TaskDetailPanel – metadata + editor + odkazy
   taskdialog.py         dialog nového úkolu (metadata + zkratky) + volba pozice vkládání
   undo.py               UndoManager – hybridní undo (levné metadatové/created záznamy + snapshot)
+  activitylog.py        ActivityLogger – log aktivního úkolu do _activity.log (formát: ACTIVITY_LOG_FORMAT.md)
   stats.py              Statistiky – výpočet + dialog se sloupcovými grafy (F8)
   commandpalette.py     CommandPalette – příkazová paleta (Ctrl+Shift+P)
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
@@ -277,3 +288,4 @@ výběr a pohled**:
 | `test_sequence.py` | sekvence: řetěz blokování, dialog, postupné odemykání |
 | `test_snooze.py` | odklad: odpočet, obnovení, řazení doběhlých nahoru |
 | `test_context_key.py` | klávesa kontextového menu ve stromu, seznamu i kartách |
+| `test_order_unique.py` | pořadí nového úkolu je **globálně** jedinečné (i vůči skrytým); `normalize_orders()` nepřepisuje strom |

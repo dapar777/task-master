@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import CommandPalette
 from .constants import (
@@ -67,7 +68,8 @@ class MainWindow(QMainWindow):
         self._view_mode = self.settings.value("view_mode", "tree", type=str)
         if self._view_mode not in VIEW_MODES:
             self._view_mode = "tree"
-        self._current_node = None
+        self._activity_logger: ActivityLogger | None = None
+        self.__current_node = None
         # úsporné zobrazení karet (Bez rušení): úkoly mimo Probíhá+Ke zpracování
         # jsou nižší. Defaultně zapnuto.
         self._compact_cards = self.settings.value("compact_cards", True, type=bool)
@@ -103,6 +105,22 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._restore_geometry()
         self._open_initial_workspace()
+
+    # ------------------------------------------------------------------
+    # aktivní úkol – každá změna se loguje do _activity.log workspace
+    # ------------------------------------------------------------------
+    @property
+    def _current_node(self):
+        return self.__current_node
+
+    @_current_node.setter
+    def _current_node(self, node) -> None:
+        prev = self.__current_node
+        self.__current_node = node
+        prev_id = prev.task_id if prev is not None else None
+        new_id = node.task_id if node is not None else None
+        if prev_id != new_id and self._activity_logger is not None:
+            self._activity_logger.log_active_task(node)
 
     # ------------------------------------------------------------------
     # UI
@@ -430,6 +448,7 @@ class MainWindow(QMainWindow):
         self.detail.load(None)
         self._current_node = None
         self.workspace = Workspace(path)
+        self._activity_logger = ActivityLogger(self.workspace.root)
         self.detail.resolver = self.workspace.node_by_id
         self.card_view.resolver = self.workspace.node_by_id
         self.tree.resolver = self.workspace.node_by_id
@@ -508,6 +527,16 @@ class MainWindow(QMainWindow):
         """
         return self.filter_panel.matches(node) or node is self._current_node
 
+    def _matcher(self):
+        """Totéž co _match, ale filtr se sejme jednou – pro průchod všemi úkoly.
+
+        _match volaný pro každý úkol četl stav widgetů filtru znovu a znovu;
+        při stovkách úkolů to byla většina času přebudování zobrazení.
+        """
+        match = self.filter_panel.matcher()
+        cur = self._current_node
+        return lambda node: match(node) or node is cur
+
     # ------------------------------------------------------------------
     # Vícenásobný výběr (hromadné operace ve stromu / seznamu)
     # ------------------------------------------------------------------
@@ -556,7 +585,7 @@ class MainWindow(QMainWindow):
         else:
             self.stack.setCurrentIndex(0)
             self.tree.populate(
-                self.workspace.roots, self._view_mode == "tree", self._match,
+                self.workspace.roots, self._view_mode == "tree", self._matcher(),
                 sort_key, sort_desc,
             )
         self.filter_panel.populate_dynamic(
@@ -571,8 +600,9 @@ class MainWindow(QMainWindow):
         klávesová zkratka by úkol vkládala mezi jiné sousedy, než jaké uživatel vidí.
         """
         key, desc = self.filter_panel.current_sort()
+        match = self._matcher()
         nodes = [n for n in self.workspace.all_nodes()
-                 if n is not exclude and self._match(n)]
+                 if n is not exclude and match(n)]
         seq = sort_flat(nodes, key, desc)
         if self._view_mode == "cards":
             # Bez rušení: seskup podle stavu do pevného pořadí skupin
@@ -619,7 +649,8 @@ class MainWindow(QMainWindow):
             return
         # po ZMĚNĚ FILTRU aktuální nevyhovuje -> přepni na první vyhovující
         # (a přebuduj, aby starý nevyhovující už nebyl držený jako aktivní)
-        visible = [n for n in self.workspace.all_nodes() if self.filter_panel.matches(n)]
+        match = self.filter_panel.matcher()
+        visible = [n for n in self.workspace.all_nodes() if match(n)]
         key, desc = self.filter_panel.current_sort()
         self._current_node = sort_nodes(visible, key, desc)[0] if visible else None
         self._populate()
@@ -1726,23 +1757,40 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Vlastní pořadí (float -> vždy lze vložit mezi)
     # ------------------------------------------------------------------
-    @staticmethod
-    def _order_between(ordered, insert_at: int) -> float:
-        """Pořadí (float) pro vložení na pozici v seznamu BEZ vkládaného uzlu."""
+    def _order_between(self, ordered, insert_at: int) -> float:
+        """Pořadí (float) pro vložení na pozici v seznamu BEZ vkládaného uzlu.
+
+        Výsledek musí být jedinečný GLOBÁLNĚ, ne jen v `ordered`: ten seznam
+        bývá jen výřez (viditelné karty při filtru, sourozenci) a hodnota
+        spočítaná jen z jeho sousedů snadno padne na pořadí úkolu mimo výřez
+        (prev+1 na skrytého souseda, střed na skrytý úkol mezi nimi). Kolizi
+        by pak normalize_orders() řešila přečíslováním a uložením CELÉHO
+        stromu – při stovkách úkolů sekundy při každém dalším přidání.
+        Proto se nový úkol vkládá mezi `prev` a nejbližší obsazené pořadí
+        nad ním, ať už patří komukoli.
+        """
         prev = ordered[insert_at - 1].order if insert_at > 0 else None
         nxt = ordered[insert_at].order if insert_at < len(ordered) else None
+        taken = {n.order for n in self.workspace.all_nodes()}
         if prev is None and nxt is None:
-            return 0.0
+            return self.workspace.next_order()
         if prev is None:
-            return nxt - 1.0
+            cand = nxt - 1.0
+            return cand if cand not in taken else min(taken) - 1.0
         if nxt is None:
-            return prev + 1.0
-        if nxt - prev > 1e-9:
-            return (prev + nxt) / 2.0
-        # mezera vyčerpána -> přečísluj skupinu a vlož doprostřed
+            cand = prev + 1.0
+            return cand if cand not in taken else max(taken) + 1.0
+        hi = min((o for o in taken if o > prev), default=nxt)
+        mid = (prev + hi) / 2.0
+        if prev < mid < hi:
+            return mid
+        # mezera vyčerpána (float už střed nerozliší) -> přečísluj skupinu
+        # do čerstvého rozsahu nad vším ostatním: zůstane jedinečná a nevyvolá
+        # přepis celého stromu; ukládá se jen `ordered`
+        base = max(taken) + 1.0
         for i, n in enumerate(ordered):
-            n.set_order(float(i))
-        return insert_at - 0.5
+            n.set_order(base + i)
+        return base + insert_at - 0.5
 
     def _place_node(self, dragged, ref, before: bool) -> None:
         siblings = ref.parent.children if ref.parent else self.workspace.roots
@@ -1845,7 +1893,8 @@ class MainWindow(QMainWindow):
         Skupina se určuje z hierarchie, ne ze zobrazené sekvence – v kartách
         totiž hotové úkoly padají dolů a skupinu by roztrhly.
         """
-        present = {n for n in self.workspace.all_nodes() if self._match(n)}
+        match = self._matcher()
+        present = {n for n in self.workspace.all_nodes() if match(n)}
 
         def vis_parent(n):
             p = n.parent
