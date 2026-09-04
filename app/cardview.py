@@ -205,8 +205,12 @@ class CardWidget(QFrame):
 
         row = QHBoxLayout(self)
         m = 8 if compact else 12
-        row.setContentsMargins(18, m, 14, m)
-        row.setSpacing(12)
+        if narrow:
+            row.setContentsMargins(12, m - 2, 8, m - 2)  # úzký sloupec: těsnější karta
+            row.setSpacing(8)
+        else:
+            row.setContentsMargins(18, m, 14, m)
+            row.setSpacing(12)
         row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(left, 1)
 
@@ -302,6 +306,7 @@ class CardView(QScrollArea):
         self.container.setObjectName("cardsPage")
         outer = QHBoxLayout(self.container)
         outer.setContentsMargins(24, 16, 24, 16)
+        self._outer = outer
         # sloupec bere celou šířku až do maxima; rozpěrky (váha 0) vezmou jen
         # to, co zbyde nad maximem, takže sloupec stojí uprostřed
         outer.addStretch(0)
@@ -336,6 +341,9 @@ class CardView(QScrollArea):
         narrow = self.viewport().width() < self.NARROW_BELOW
         if narrow != self._narrow:
             self._narrow = narrow
+            # úzké okno: menší okraje stránky i mezery, karty přes celou šířku
+            self._outer.setContentsMargins(*((6, 8, 6, 8) if narrow else (24, 16, 24, 16)))
+            self.vbox.setSpacing(6 if narrow else 10)
             if self._last_populate is not None:
                 # otisky karet obsahují režim šířky -> karty se přestaví
                 self.populate(*self._last_populate)
