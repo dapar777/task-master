@@ -103,6 +103,38 @@ class Badge(Chip):
             self.setToolTip(tooltip)
 
 
+class TitleLabel(QLabel):
+    """Zalamovaný název v patkovém písmu.
+
+    Patková písma (Cambria) mají akcenty a dotahy přes hranici řádku, jak ji
+    spočítá QLabel – první řádek se pak nahoře ořezával. Přidáváme pár pixelů
+    výšky navíc; text je v labelu svisle centrovaný, takže vzniká rezerva
+    nahoře i dole.
+    """
+
+    PAD = 8
+
+    def __init__(self, text: str = "", pt: float = 14.5, parent=None):
+        super().__init__(text, parent)
+        self.setFont(theme.title_font(pt))
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+    def heightForWidth(self, w: int) -> int:
+        h = super().heightForWidth(w)
+        return h + self.PAD if h > 0 else h
+
+    def sizeHint(self):
+        s = super().sizeHint()
+        s.setHeight(s.height() + self.PAD)
+        return s
+
+    def minimumSizeHint(self):
+        s = super().minimumSizeHint()
+        s.setHeight(s.height() + self.PAD)
+        return s
+
+
 class SectionLabel(QLabel):
     """Malý verzálkový nadpis sekce (FILTRY, SOUBORY…)."""
 

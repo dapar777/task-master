@@ -31,7 +31,7 @@ from .constants import PRIORITIES, STATUSES
 from .editor import MarkdownEditor
 from .storage import TaskNode
 from .tasktree import breadcrumb
-from .widgets import HLine, IconButton, SectionLabel
+from .widgets import HLine, IconButton, SectionLabel, TitleLabel
 
 PATH_ROLE = Qt.ItemDataRole.UserRole
 REF_ROLE = Qt.ItemDataRole.UserRole
@@ -116,9 +116,7 @@ class TaskDetailPanel(QWidget):
 
         self.done_check = QCheckBox()
         self.done_check.setToolTip("Hotovo (Ctrl+Enter)")
-        self.title_label = QLabel("—")
-        self.title_label.setFont(theme.title_font(16))
-        self.title_label.setWordWrap(True)
+        self.title_label = TitleLabel("—", 16)
         self.title_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         title_row = QHBoxLayout()

@@ -197,7 +197,7 @@ class StatsDialog(QDialog):
     def __init__(self, nodes, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Statistiky")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(760)
         s = compute_stats(nodes)
 
         layout = QVBoxLayout(self)

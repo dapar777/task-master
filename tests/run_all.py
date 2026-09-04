@@ -27,6 +27,7 @@ TESTS = [
     ("test_snooze.py", "odklad: odpočet, obnovení, řazení"),
     ("test_context_key.py", "klávesa kontextového menu ve všech zobrazeních"),
     ("test_order_unique.py", "pořadí nového úkolu je globálně jedinečné (bez přepisu stromu)"),
+    ("test_theme.py", "téma: barvy jen v theme.py, karty a strom v obou tématech, přepínač"),
 ]
 
 

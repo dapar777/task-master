@@ -14,6 +14,8 @@ from PySide6.QtGui import (
     QPixmap,
 )
 
+from . import theme
+
 _SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -27,10 +29,10 @@ def _draw(size: int) -> QPixmap:
     rect = QRectF(m, m, size - 2 * m, size - 2 * m)
     radius = size * 0.24
 
-    # zaoblený dlaždicový podklad s moderním přechodem (modrá -> zelená)
+    # zaoblený dlaždicový podklad v akcentu tématu (Solarized oranžová -> žlutá)
     grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    grad.setColorAt(0.0, QColor("#4f7cff"))
-    grad.setColorAt(1.0, QColor("#1fb86b"))
+    grad.setColorAt(0.0, QColor(theme.ORANGE))
+    grad.setColorAt(1.0, QColor(theme.YELLOW))
     path = QPainterPath()
     path.addRoundedRect(rect, radius, radius)
     p.fillPath(path, QBrush(grad))
@@ -41,8 +43,8 @@ def _draw(size: int) -> QPixmap:
     hi.setColorAt(1.0, QColor(255, 255, 255, 0))
     p.fillPath(path, QBrush(hi))
 
-    # zaškrtnutí (checkmark)
-    pen = QPen(QColor("#ffffff"))
+    # zaškrtnutí (checkmark) v krémové base3
+    pen = QPen(QColor(theme.BASE3))
     pen.setWidthF(size * 0.11)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)

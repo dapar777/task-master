@@ -87,10 +87,10 @@ class TaskDialog(QDialog):
 
         # výběr umístění nového úkolu (combobox: výchozí + top-level „_" úkoly)
         self.location_combo = QComboBox()
-        self.location_combo.addItem(f"⟐ {default_label}", None)
+        self.location_combo.addItem(default_label, None)
         for r in self._roots:
             if r.title.startswith("_"):
-                self.location_combo.addItem(f"⌂ {r.title}", r.task_id)
+                self.location_combo.addItem(r.title, r.task_id)
 
         form = QFormLayout()
         form.addRow("Název:", self.title_edit)

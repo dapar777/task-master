@@ -47,6 +47,27 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 💾 **Perzistence stavu** – aktivní úkol, filtr a zobrazení se ukládají do `workspace/_state.yaml` a obnoví po startu.
 - ⌨️ **Plně ovladatelné klávesnicí** s **konfigurovatelnými zkratkami**.
 
+## Vzhled
+
+Aplikace používá **Solarized** paletu ve dvou tématech – světlé (teplý papír)
+a **tmavé** (menu *Zobrazení → Tmavé téma*, volba se pamatuje). Všechny barvy,
+písma a QSS žijí v [`app/theme.py`](app/theme.py); ikony jsou kreslené
+(`app/icons.py`), ne emoji.
+
+- **Hlavička okna** – název prostoru, přepínač *Strom / Seznam / Bez rušení*,
+  hledání v názvu (`Ctrl+F`; zůstává kritériem filtru), tlačítko *Příkazy*
+  (`Ctrl+Shift+P`) a *Nový úkol*. Menu bar zůstává celý.
+- **Stav a priorita jako chipy** – ve stromu i na kartách místo podbarvených
+  buněk: modrá *Probíhá*, žlutá *Čeká* / odklad (s odpočtem), červená
+  *Blokováno* (`auto` u automatického), zelená *Hotovo*; priorita jako štítek
+  `P8` na rampě zelená → červená.
+- **Detail úkolu** začíná hlavičkou: cesta, velký název s checkboxem *hotovo*,
+  řádek chipů (stav, priorita, vlaječka, kategorie, tagy) a cesta na disku.
+- **Bez rušení** – karty v jednom sloupci uprostřed na nažloutlém podkladu,
+  s levým pruhem v barvě stavu a **nadpisy skupin** (*Čas vypršel · Probíhá +
+  Ke zpracování · Čeká · Blokováno · Hotovo*). Filtr se nad kartami zobrazuje
+  jako chipy; *Kritéria* rozbalí panel filtru přímo nad karty.
+
 ## Struktura ukládání
 
 ```
@@ -238,6 +259,9 @@ app/
   filterpanel.py        FilterPanel – sbalený filtr, multi-select, rozmezí priority
   detailpanel.py        TaskDetailPanel – metadata + editor + odkazy
   taskdialog.py         dialog nového úkolu (metadata + zkratky) + volba pozice vkládání
+  theme.py              tokeny vzhledu (Solarized světlé/tmavé), QSS, paleta, písma – JEDINÝ zdroj barev
+  icons.py              kreslené SVG ikony obarvené podle tématu (místo emoji)
+  widgets.py            Chip, StatusChip, PriorityPill, Badge, TitleLabel, SegmentedControl, IconButton…
   undo.py               UndoManager – hybridní undo (levné metadatové/created záznamy + snapshot)
   activitylog.py        ActivityLogger – log aktivního úkolu do _activity.log (formát: ACTIVITY_LOG_FORMAT.md)
   stats.py              Statistiky – výpočet + dialog se sloupcovými grafy (F8)
@@ -289,3 +313,4 @@ výběr a pohled**:
 | `test_snooze.py` | odklad: odpočet, obnovení, řazení doběhlých nahoru |
 | `test_context_key.py` | klávesa kontextového menu ve stromu, seznamu i kartách |
 | `test_order_unique.py` | pořadí nového úkolu je **globálně** jedinečné (i vůči skrytým); `normalize_orders()` nepřepisuje strom |
+| `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |

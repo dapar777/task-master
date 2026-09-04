@@ -28,7 +28,7 @@ from . import icons, theme
 from .constants import STATUSES
 from .taskdialog import format_duration
 from .tasktree import _chip_text, breadcrumb
-from .widgets import Badge, Chip, IconButton, PriorityPill, StatusChip
+from .widgets import Badge, Chip, IconButton, PriorityPill, StatusChip, TitleLabel
 
 CARD_COLUMN_WIDTH = 860
 
@@ -99,13 +99,11 @@ class CardWidget(QFrame):
 
         # název: patkový, vlaječka jako ikona před ním, hotový přeškrtnutý
         self.flagged = bool(node.flag)
-        self.title = QLabel(node.title)
-        tf = theme.title_font(11.5 if compact else 14.5)
-        tf.setStrikeOut(done)
-        self.title.setFont(tf)
-        self.title.setWordWrap(True)
-        self.title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.title = TitleLabel(node.title, 11.5 if compact else 14.5)
         if done:
+            tf = self.title.font()
+            tf.setStrikeOut(True)
+            self.title.setFont(tf)
             self.title.setStyleSheet(f"color:{t.done_text};")
         self.flag_label = None
         if self.flagged:
