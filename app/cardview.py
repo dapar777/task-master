@@ -73,14 +73,17 @@ class CardWidget(QFrame):
     contextRequested = Signal(object, object)  # (node, globální pozice)
     resumeRequested = Signal(object)           # (node) – tlačítko Obnovit
 
-    def __init__(self, node, parent=None, resolver=None, compact=False):
+    def __init__(self, node, parent=None, resolver=None, compact=False, narrow=False):
         super().__init__(parent)
         self.node = node
         self.compact = compact
+        self.narrow = narrow
         self.setObjectName("card")
         self.setProperty("selected", "false")  # stejný typ jako v set_selected
-        # šířka se přizpůsobí sloupci; výška roste podle zalomeného obsahu
-        sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # Šířka se přizpůsobí sloupci; výška roste podle zalomeného obsahu.
+        # Vodorovně Ignored: karta nesmí sloupci diktovat minimum – v úzkém
+        # okně by karty přetékaly za okraj (vodorovné rolování je vypnuté).
+        sp = QSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
         sp.setHeightForWidth(True)
         self.setSizePolicy(sp)
 
@@ -124,7 +127,7 @@ class CardWidget(QFrame):
             self.countdown = StatusChip("snoozed", "", icon="clock", mono=True)
             right.addWidget(self.countdown)
             self.resume_btn = IconButton("rotate", "Odložit znovu o stejný interval",
-                                         text="Obnovit", framed=True)
+                                         text="" if narrow else "Obnovit", framed=True)
             self.resume_btn.clicked.connect(lambda: self.resumeRequested.emit(self.node))
             right.addWidget(self.resume_btn)
             self.refresh_countdown()
@@ -143,8 +146,9 @@ class CardWidget(QFrame):
             title_row.addWidget(self.flag_label, 0, Qt.AlignmentFlag.AlignTop)
             title_row.setSpacing(6)
         title_row.addWidget(self.title, 1)
-        title_row.addLayout(right, 0)
-        title_row.setAlignment(right, Qt.AlignmentFlag.AlignTop)
+        if not narrow:
+            title_row.addLayout(right, 0)
+            title_row.setAlignment(right, Qt.AlignmentFlag.AlignTop)
 
         # cesta; úsporná karta si k ní připojí blokující info, ať se neztratí
         path_text = breadcrumb(node)
@@ -161,6 +165,10 @@ class CardWidget(QFrame):
         left.setSpacing(2 if compact else 6)
         left.addLayout(title_row)
         left.addWidget(self.path)
+        if narrow:
+            # úzký sloupec: pravý shluk (odznaky, odpočet, priorita) pod cestu
+            right.addStretch(1)
+            left.addLayout(right)
 
         # plná karta: řádek chipů (stav, kategorie, tagy, odkazy, pořadí)
         if not compact:
@@ -318,6 +326,19 @@ class CardView(QScrollArea):
         self._empty = QLabel("Žádné úkoly nevyhovují filtru.")
         self._empty.setObjectName("faintLabel")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._narrow = False          # úzký sloupec: pravý shluk karty pod název
+        self._last_populate = None    # (nodes, compact_fn, group_fn) pro přestavbu po resize
+
+    NARROW_BELOW = 560  # px šířky výřezu
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        narrow = self.viewport().width() < self.NARROW_BELOW
+        if narrow != self._narrow:
+            self._narrow = narrow
+            if self._last_populate is not None:
+                # otisky karet obsahují režim šířky -> karty se přestaví
+                self.populate(*self._last_populate)
 
     def populate(self, nodes, compact_fn=None, group_fn=None) -> None:
         """Naplní karty.
@@ -326,6 +347,8 @@ class CardView(QScrollArea):
         group_fn(node) -> (klíč, nadpis, naléhavé) skupiny; při změně klíče
         se mezi karty vloží nadpis skupiny.
         """
+        nodes = list(nodes)
+        self._last_populate = (nodes, compact_fn, group_fn)
         vpos = self.verticalScrollBar().value()
         # Bez tohoto Qt překresluje po každé přidané kartě a nová karta bez
         # rodiče na okamžik problikne jako samostatné okno mimo aplikaci.
@@ -352,7 +375,7 @@ class CardView(QScrollArea):
             b = self.resolver(node.blocked_by)
             blocker = b.title if b else ""
         return (
-            node.title, node.flag, node.has_body, compact, theme.current().name,
+            node.title, node.flag, node.has_body, compact, theme.current().name, self._narrow,
             node.meta.get("_status"), node.meta.get("_priority"),
             node.meta.get("_category"), tuple(node.meta.get("_tags") or ()),
             node.blocked_by, node.auto_blocked, blocker,
@@ -365,7 +388,7 @@ class CardView(QScrollArea):
         # rodič HNED v konstruktoru – widget bez rodiče je top-level okno,
         # které Qt stihne zobrazit dřív, než ho addWidget vloží do layoutu
         card = CardWidget(node, parent=self.column,
-                          resolver=self.resolver, compact=compact)
+                          resolver=self.resolver, compact=compact, narrow=self._narrow)
         card.selected.connect(self._on_card_clicked)
         card.opened.connect(self.cardOpened)
         card.statusToggled.connect(self.cardStatusToggled)

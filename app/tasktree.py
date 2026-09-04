@@ -193,11 +193,13 @@ class _ChipDelegate(QStyledItemDelegate):
         painter.setFont(font)
         painter.setPen(QColor(fg))
         avail = x + w - pad - tx
-        painter.drawText(
-            QRect(tx, y, max(0, avail), h),
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            fm.elidedText(text, Qt.TextElideMode.ElideRight, max(0, avail)),
-        )
+        # v úzkém sloupci nech jen tečku/ikonu – zkrácený text by nic neřekl
+        if avail >= 14:
+            painter.drawText(
+                QRect(tx, y, avail, h),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                fm.elidedText(text, Qt.TextElideMode.ElideRight, avail),
+            )
         painter.restore()
 
 
@@ -245,6 +247,26 @@ class TaskTreeWidget(QTreeWidget):
         self.itemSelectionChanged.connect(self._on_selection_changed)
         self.itemChanged.connect(self._on_item_changed)
         self.itemDelegate().closeEditor.connect(self._finish_edit)
+
+    STATUS_COL_W = 150   # plná šířka sloupce Stav
+    PRIORITY_COL_W = 60
+    MIN_TASK_COL_W = 200  # sloupec Úkol se ošidí až jako poslední
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_columns()
+
+    def _fit_columns(self) -> None:
+        """Úzký strom: nejdřív se zužuje Stav (chip skončí jen s tečkou), pak Priorita."""
+        w = self.viewport().width()
+        prio = self.PRIORITY_COL_W if w >= 380 else 40
+        status = self.STATUS_COL_W
+        if w - status - prio < self.MIN_TASK_COL_W:
+            status = max(34, w - prio - self.MIN_TASK_COL_W)
+        if self.columnWidth(1) != status:
+            self.setColumnWidth(1, status)
+        if self.columnWidth(2) != prio:
+            self.setColumnWidth(2, prio)
 
     # ------------------------------------------------------------------
     # Inline přejmenování
