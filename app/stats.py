@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import theme
 from .constants import STATUSES
 from .storage import parse_dt as _parse_dt
 
@@ -145,8 +146,9 @@ class _BarChart(QWidget):
         plot = QRectF(left, top, W - left - right, H - top - bottom)
         maxv = max([max(vals) for _, _, vals in self._series if vals] + [1])
 
+        t = theme.current()
         # osa
-        p.setPen(QPen(QColor("#cccccc")))
+        p.setPen(QPen(QColor(t.line)))
         p.drawLine(plot.left(), plot.bottom(), plot.right(), plot.bottom())
 
         n = len(self._labels)
@@ -166,11 +168,11 @@ class _BarChart(QWidget):
                 rect = QRectF(x, plot.bottom() - bh, bar_w - 2, bh)
                 p.fillRect(rect, QColor(color))
                 if v:
-                    p.setFont(small); p.setPen(QColor("#444"))
+                    p.setFont(small); p.setPen(QColor(t.text2))
                     p.drawText(QRectF(x - 4, plot.bottom() - bh - 14, bar_w + 6, 12),
                                Qt.AlignmentFlag.AlignCenter, str(v))
             # popisek pod skupinou
-            p.setFont(small); p.setPen(QColor("#666"))
+            p.setFont(small); p.setPen(QColor(t.muted))
             p.drawText(QRectF(plot.left() + i * group_w, plot.bottom() + 3, group_w, 14),
                        Qt.AlignmentFlag.AlignCenter, self._labels[i])
         p.end()
@@ -204,35 +206,34 @@ class StatsDialog(QDialog):
         summ = QGridLayout()
         summ.setHorizontalSpacing(18)
 
-        def cell(r, c, title, value, color="#1c1c1c"):
+        tk = theme.current()
+
+        def cell(r, c, title, value, color=None):
             box = QVBoxLayout()
-            v = QLabel(str(value)); v.setStyleSheet(f"font-size:20px; font-weight:bold; color:{color};")
-            t = QLabel(title); t.setStyleSheet("color:#666; font-size:11px;")
+            v = QLabel(str(value))
+            v.setFont(theme.title_font(16))
+            v.setStyleSheet(f"color:{color or tk.text};")
+            t = QLabel(title); t.setObjectName("faintLabel")
             box.setSpacing(0); box.addWidget(v); box.addWidget(t)
             wrap = QWidget(); wrap.setLayout(box)
             summ.addWidget(wrap, r, c)
 
         st = s["by_status"]
-        # dlaždice se generují ze STATUSES, ať nový stav nezmizí z přehledu
-        _STATUS_TILE_COLORS = {
-            "done": "#2e9e4f",
-            "in_progress": "#1a6fd6",
-            "todo": "#1c1c1c",
-            "waiting": "#c07a1a",
-            "snoozed": "#c07a1a",
-            "blocked": "#c0392b",
-        }
+        # dlaždice se generují ze STATUSES, ať nový stav nezmizí z přehledu;
+        # barvy = barvy chipů stavů (theme.status_style), „todo" neutrální
         _TILE_ORDER = ("done", "in_progress", "todo", "waiting", "snoozed", "blocked")
         cell(0, 0, "Úkolů celkem", s["total"])
         for i, key in enumerate(k for k in _TILE_ORDER if k in STATUSES):
             cell(0, i + 1, STATUSES[key], st.get(key, 0),
-                 _STATUS_TILE_COLORS.get(key, "#1c1c1c"))
-        cell(1, 0, "Založené dnes", s["today_created"], "#4f7cff")
-        cell(1, 1, "Uzavřené dnes", s["today_completed"], "#2e9e4f")
-        cell(1, 2, "Založené 7 dní", s["w_created"], "#4f7cff")
-        cell(1, 3, "Uzavřené 7 dní", s["w_completed"], "#2e9e4f")
+                 tk.text if key == "todo" else theme.status_style(key)[0])
+        created_c = theme.status_style("in_progress")[0]
+        done_c = theme.status_style("done")[0]
+        cell(1, 0, "Založené dnes", s["today_created"], created_c)
+        cell(1, 1, "Uzavřené dnes", s["today_completed"], done_c)
+        cell(1, 2, "Založené 7 dní", s["w_created"], created_c)
+        cell(1, 3, "Uzavřené 7 dní", s["w_completed"], done_c)
         since = _fmt_duration(s["since_last"]) if s["since_last"] is not None else "—"
-        cell(1, 4, "Od posl. uzavření", since, "#7b4fd6")
+        cell(1, 4, "Od posl. uzavření", since, theme.VIOLET)
         layout.addLayout(summ)
 
         layout.addWidget(_hline())
@@ -240,8 +241,8 @@ class StatsDialog(QDialog):
         # ---- graf založené vs uzavřené za období ----
         layout.addWidget(_section(f"Založené a uzavřené za posledních {s['days']} dní"))
         day_series = [
-            ("Založené", "#4f7cff", s["created_series"]),
-            ("Uzavřené", "#2e9e4f", s["completed_series"]),
+            ("Založené", theme.BLUE, s["created_series"]),
+            ("Uzavřené", theme.GREEN, s["completed_series"]),
         ]
         layout.addWidget(_BarChart(s["day_labels"], day_series))
         layout.addWidget(_legend(day_series))
@@ -255,7 +256,7 @@ class StatsDialog(QDialog):
             last = QLabel(f"Od posledního uzavření uplynulo <b>{_fmt_duration(s['since_last'])}</b>"
                           f"  ·  naposledy: „{title}“ ({when})")
             last.setTextFormat(Qt.TextFormat.RichText)
-            last.setStyleSheet("color:#444; font-size:11px;")
+            last.setObjectName("hint")
             last.setWordWrap(True)
             layout.addWidget(last)
 
@@ -266,13 +267,13 @@ class StatsDialog(QDialog):
                     f"   ·   medián: {_fmt_duration(s['dur_med'])}"
                     f"   ·   nejrychleji: {_fmt_duration(s['dur_min'])}"
                     f"   ·   nejdéle: {_fmt_duration(s['dur_max'])}")
-            lab = QLabel(info); lab.setStyleSheet("color:#444; font-size:11px;"); lab.setWordWrap(True)
+            lab = QLabel(info); lab.setObjectName("hint"); lab.setWordWrap(True)
             layout.addWidget(lab)
-            dur_series = [("Počet úkolů", "#e08a1e", s["dur_hist"])]
+            dur_series = [("Počet úkolů", theme.ORANGE, s["dur_hist"])]
             layout.addWidget(_BarChart(s["dur_labels"], dur_series))
         else:
             empty = QLabel("Zatím žádné uzavřené úkoly s časem vzniku i dokončení.")
-            empty.setStyleSheet("color:#999;")
+            empty.setObjectName("faintLabel")
             layout.addWidget(empty)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -282,11 +283,11 @@ class StatsDialog(QDialog):
 
 
 def _hline() -> QFrame:
-    ln = QFrame(); ln.setFrameShape(QFrame.Shape.HLine); ln.setStyleSheet("color:#e0e0e0;")
+    ln = QFrame(); ln.setObjectName("hline"); ln.setFrameShape(QFrame.Shape.NoFrame)
     return ln
 
 
 def _section(text: str) -> QLabel:
-    lab = QLabel(text)
-    lab.setStyleSheet("font-weight:600; color:#333; margin-top:4px;")
+    lab = QLabel(text.upper())
+    lab.setObjectName("sectionLabel")
     return lab

@@ -12,7 +12,6 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -24,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .constants import PRIORITIES, SORT_OPTIONS, STATUSES
+from .widgets import SectionLabel
 
 DATA_ROLE = Qt.ItemDataRole.UserRole
 
@@ -120,9 +120,6 @@ class FilterPanel(QWidget):
         self.expand_btn.setText("Kritéria ▸")
         self.expand_btn.setToolTip("Zobrazit/skrýt kritéria filtru")
         self.expand_btn.toggled.connect(self._toggle_criteria)
-        header = QHBoxLayout()
-        header.addWidget(self.saved_combo, 1)
-        header.addWidget(self.expand_btn)
 
         # --- kritéria ---
         self.name_edit = QLineEdit()
@@ -175,23 +172,32 @@ class FilterPanel(QWidget):
         form.addRow("Směr:", self.sort_dir_combo)
 
         self.reset_btn = QPushButton("Zrušit filtry")
+        self.reset_btn.setProperty("quiet", "true")
         self.reset_btn.clicked.connect(self.reset)
 
         self.criteria = QWidget()
         crit_layout = QVBoxLayout(self.criteria)
         crit_layout.setContentsMargins(0, 4, 0, 0)
         crit_layout.addLayout(form)
-        crit_layout.addWidget(self.reset_btn)
+        reset_row = QHBoxLayout()
+        reset_row.addStretch(1)
+        reset_row.addWidget(self.reset_btn)
+        crit_layout.addLayout(reset_row)
         self.criteria.setVisible(False)
 
-        box = QGroupBox("Filtry")
-        box_layout = QVBoxLayout(box)
-        box_layout.addLayout(header)
-        box_layout.addWidget(self.criteria)
+        # hlavička sekce: FILTRY … Kritéria ▸ ; pod ní uložený filtr přes celou šířku
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.addWidget(SectionLabel("Filtry"))
+        head.addStretch(1)
+        head.addWidget(self.expand_btn)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(box)
+        layout.setSpacing(6)
+        layout.addLayout(head)
+        layout.addWidget(self.saved_combo)
+        layout.addWidget(self.criteria)
 
         # signály kritérií
         self.name_edit.textChanged.connect(self._criteria_changed)

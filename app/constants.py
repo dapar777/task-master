@@ -83,6 +83,15 @@ STATUS_GROUPS = (
     ("done", ("done",)),
 )
 
+# nadpisy skupin v Bez rušení
+GROUP_LABELS = {
+    "elapsed": "Čas vypršel",
+    "active": "Probíhá + Ke zpracování",
+    "waiting": "Čeká",
+    "blocked": "Blokováno",
+    "done": "Hotovo",
+}
+
 # index skupiny pro úkol s doběhlým odkladem (úplně nahoře)
 ELAPSED_GROUP_INDEX = 0
 

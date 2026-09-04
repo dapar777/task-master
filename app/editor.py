@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import theme
+
 _HEADING_SCALE = {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.15, 5: 1.05, 6: 1.0}
 
 
@@ -184,7 +186,7 @@ class MarkdownEditor(QWidget):
         fmt.setFontFixedPitch(on)
         if on:
             fmt.setFontFamilies(["Consolas", "Courier New", "monospace"])
-            fmt.setBackground(QColor("#f0f0f0"))
+            fmt.setBackground(QColor(theme.current().panel))
         else:
             fmt.setFontFamilies(["Segoe UI"])
             fmt.setBackground(QColor("transparent"))
@@ -236,7 +238,7 @@ class MarkdownEditor(QWidget):
         fmt = QTextCharFormat()
         fmt.setAnchor(True)
         fmt.setAnchorHref(url)
-        fmt.setForeground(QColor("#1a6fd6"))
+        fmt.setForeground(QColor(theme.current().accent))
         fmt.setFontUnderline(True)
         cursor.insertText(text, fmt)
 

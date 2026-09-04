@@ -160,7 +160,7 @@ print("6) Karta ukazuje odpočet i tlačítko Obnovit")
 card = win.card_view._cards.get(str(node("Odloz").path))
 check("karta má odpočet", card is not None and card.countdown is not None)
 check("karta má tlačítko Obnovit", card is not None and card.resume_btn is not None)
-check("odpočet ukazuje zbývající čas", "⏳" in card.countdown.text())
+check("odpočet ukazuje zbývající čas", card.countdown.property("phase") == "running")
 check("strom ukazuje odpočet taky", "⏳" in _status_text(node("Odloz")))
 
 print("7) Po doběhnutí jde úkol úplně nahoru")
@@ -172,7 +172,7 @@ check(f"skupina = elapsed ({ELAPSED_GROUP_INDEX})",
       win._group_index(node("Odloz")) == ELAPSED_GROUP_INDEX)
 check(f"je první v pořadí ({order()[:2]})", order()[0] == "Odloz")
 card = win.card_view._cards.get(str(node("Odloz").path))
-check("karta hlásí vypršení", card is not None and "vypršelo" in card.countdown.text())
+check("karta hlásí vypršení", card is not None and "vypršelo" in card.countdown.plain())
 check("strom hlásí vypršení", "vypršel" in _status_text(node("Odloz")))
 
 print("8) Obnovit spustí stejný interval znovu")
@@ -222,7 +222,7 @@ check("řadí se nahoru mezi doběhlé",
       win._group_index(lost) == ELAPSED_GROUP_INDEX)
 card = win.card_view._cards.get(str(lost.path))
 check("karta to říká místo prázdného odznaku",
-      card is not None and "bez termínu" in card.countdown.text())
+      card is not None and "bez termínu" in card.countdown.plain())
 check("strom to říká taky", "bez termínu" in _status_text(lost))
 check("nabídne tlačítko Obnovit",
       card is not None and card.resume_btn is not None)

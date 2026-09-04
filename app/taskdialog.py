@@ -36,6 +36,7 @@ from .constants import (
     SNOOZE_MAX_DAYS,
     STATUSES,
 )
+from . import theme
 from .tasktree import breadcrumb
 
 
@@ -130,7 +131,18 @@ class TaskDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
+        # hlavička dialogu: název + kam se úkol zařadí
+        heading = QLabel(window_title)
+        heading.setFont(theme.title_font(14))
+        sub = QLabel(f"Výchozí umístění: {default_label} · priorita, kategorie a vlaječka se dědí")
+        sub.setObjectName("hint")
+        sub.setWordWrap(True)
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(10)
+        layout.addWidget(heading)
+        layout.addWidget(sub)
         layout.addLayout(form)
         layout.addWidget(self.tree_toggle)
         layout.addWidget(self.loc_box)
@@ -271,7 +283,7 @@ class BlockerDialog(QDialog):
             )
         else:
             info = QLabel(f"Co blokuje úkol „{node.title}“?\nVýběr je nepovinný.")
-        info.setStyleSheet("color:#555;")
+        info.setObjectName("hint")
 
         # combobox: žádný + naposledy použité blokující úkoly
         self.blocker_combo = QComboBox()
@@ -455,7 +467,7 @@ class SequenceDialog(QDialog):
             "další."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color:#555;")
+        info.setObjectName("hint")
 
         self.list = QListWidget()
         self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -486,7 +498,7 @@ class SequenceDialog(QDialog):
 
         self.summary = QLabel()
         self.summary.setWordWrap(True)
-        self.summary.setStyleSheet("color:#666; font-size:11px;")
+        self.summary.setObjectName("faintLabel")
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -567,7 +579,7 @@ class SnoozeDialog(QDialog):
         else:
             info = QLabel("Za jak dlouho se mají úkoly znovu ozvat?")
         info.setWordWrap(True)
-        info.setStyleSheet("color:#555;")
+        info.setObjectName("hint")
 
         form = QFormLayout()
         self._sliders = {}
@@ -596,7 +608,7 @@ class SnoozeDialog(QDialog):
             self._sliders[key] = sl
 
         self.summary = QLabel()
-        self.summary.setStyleSheet("color:#444;")
+        self.summary.setObjectName("hint")
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel

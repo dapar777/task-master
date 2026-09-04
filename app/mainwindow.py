@@ -35,6 +35,8 @@ from .constants import (
     ORG_NAME,
     DEFAULT_SNOOZE,
     ELAPSED_GROUP_INDEX,
+    GROUP_LABELS,
+    SORT_OPTIONS,
     STATUS_GROUP_INDEX,
     STATUS_GROUPS,
     STATUS_ORDER,
@@ -58,7 +60,7 @@ from .taskdialog import (
 )
 from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_flat, sort_nodes
-from .widgets import IconButton, PrimaryButton, SegmentedControl
+from .widgets import Chip, IconButton, PrimaryButton, SegmentedControl
 
 VIEW_MODES = ("tree", "list", "cards")
 
@@ -154,9 +156,11 @@ class MainWindow(QMainWindow):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_tree_menu)
 
-        left = QWidget()
+        left = QFrame()
+        left.setObjectName("sidePanel")
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(6, 6, 6, 6)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(10)
         left_layout.addWidget(self.filter_panel)
         left_layout.addWidget(self.tree, 1)
 
@@ -183,10 +187,26 @@ class MainWindow(QMainWindow):
         self.card_view.cardContextMenu.connect(self._show_card_menu)
         self.card_view.cardResumeRequested.connect(self._resume_snoozed)
 
+        # stránka Bez rušení: lišta chipů filtru, (sbalený) panel kritérií, karty
+        self.cards_page = QWidget()
+        cp = QVBoxLayout(self.cards_page)
+        cp.setContentsMargins(0, 0, 0, 0)
+        cp.setSpacing(0)
+        cp.addWidget(self._build_chip_bar())
+        self.filter_host = QFrame()
+        self.filter_host.setObjectName("filterHost")
+        fh = QVBoxLayout(self.filter_host)
+        fh.setContentsMargins(20, 10, 20, 12)
+        self.filter_host_layout = fh
+        self.filter_host.setVisible(False)
+        cp.addWidget(self.filter_host)
+        cp.addWidget(self.card_view, 1)
+        self.left_layout = left_layout
+
         # přepínání normální / karty
         self.stack = QStackedWidget()
-        self.stack.addWidget(splitter)        # index 0 = strom/seznam + detail
-        self.stack.addWidget(self.card_view)  # index 1 = karty
+        self.stack.addWidget(splitter)         # index 0 = strom/seznam + detail
+        self.stack.addWidget(self.cards_page)  # index 1 = karty
 
         # hlavička (název, prostor, přepínač zobrazení, hledání, příkazy, nový úkol)
         central = QWidget()
@@ -216,6 +236,7 @@ class MainWindow(QMainWindow):
         self.logo_label.setFixedSize(20, 20)
         title = QLabel(APP_NAME)
         title.setFont(theme.title_font(12.5))
+        title.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         self.header_ws = QLabel("")
         self.header_ws.setObjectName("faintLabel")
         self.header_ws.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -256,6 +277,100 @@ class MainWindow(QMainWindow):
         t = theme.current()
         self.logo_label.setPixmap(icons.pixmap("check", 20, t.accent))
         self._search_action.setIcon(icons.icon("search"))
+
+    def _build_chip_bar(self) -> QWidget:
+        """Lišta nad kartami: aktuální filtr jako chipy, Kritéria, řazení, úsporné karty."""
+        bar = QFrame()
+        bar.setObjectName("chipBar")
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(20, 8, 20, 8)
+        lay.setSpacing(8)
+        lbl = QLabel("Filtr")
+        lbl.setObjectName("faintLabel")
+        lay.addWidget(lbl)
+        self.chip_row = QHBoxLayout()
+        self.chip_row.setSpacing(6)
+        lay.addLayout(self.chip_row)
+        self.criteria_btn = IconButton("chevron_down", "Zobrazit/skrýt kritéria filtru",
+                                       text="Kritéria", framed=True)
+        self.criteria_btn.setCheckable(True)
+        self.criteria_btn.toggled.connect(self._toggle_cards_criteria)
+        lay.addWidget(self.criteria_btn)
+        lay.addStretch(1)
+        self.sort_label = QLabel("")
+        self.sort_label.setObjectName("hint")
+        lay.addWidget(self.sort_label)
+        self.compact_btn = IconButton("list", "Úsporné karty (Ctrl+Shift+E)",
+                                      text="Úsporné karty", framed=True)
+        self.compact_btn.setCheckable(True)
+        self.compact_btn.setChecked(self._compact_cards)
+        self.compact_btn.toggled.connect(lambda on: self.act["view.compact_cards"].setChecked(on))
+        lay.addWidget(self.compact_btn)
+        return bar
+
+    def _toggle_cards_criteria(self, on: bool) -> None:
+        self.filter_host.setVisible(on)
+        if on:
+            self.filter_panel.expand_btn.setChecked(True)
+
+    def _place_filter_panel(self) -> None:
+        """Panel filtrů patří do levého panelu (strom/seznam), v kartách nad karty."""
+        if self._view_mode == "cards":
+            if self.filter_panel.parent() is not self.filter_host:
+                self.filter_host_layout.addWidget(self.filter_panel)
+            self.filter_panel.setVisible(True)
+            self.filter_host.setVisible(self.criteria_btn.isChecked())
+        else:
+            if self.filter_panel.parent() is not self.left_layout.parentWidget():
+                self.left_layout.insertWidget(0, self.filter_panel)
+            self.filter_panel.setVisible(True)
+
+    def _refresh_chip_bar(self) -> None:
+        """Chipy aktuálního filtru (jen když něco omezuje) a popis řazení."""
+        while self.chip_row.count():
+            item = self.chip_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        t = theme.current()
+        f = self.filter_panel.current_filters()
+        chips: list[Chip] = []
+        saved = self.filter_panel.saved_combo.currentData()
+        if saved:
+            chips.append(Chip(self.filter_panel.saved_combo.currentText(), t.accent_hover,
+                              theme.mix(t.accent, t.paper, 0.12), icon="bookmark"))
+        if f["name"]:
+            chips.append(Chip(f"„{f['name']}“", t.text2, t.panel, icon="search"))
+        if f["statuses"]:
+            chips.append(Chip("Stav: " + ", ".join(STATUSES.get(s, s) for s in f["statuses"]),
+                              t.text2, t.panel))
+        if (f["priority_min"], f["priority_max"]) != (1, 10):
+            chips.append(Chip(f"Priorita {f['priority_min']}–{f['priority_max']}", t.text2, t.panel))
+        if f["categories"]:
+            chips.append(Chip(", ".join(f["categories"]), t.text2, t.panel))
+        if f["tags"]:
+            chips.append(Chip(", ".join("#" + x for x in f["tags"]), t.text2, t.panel))
+        if f["flag"] is True:
+            chips.append(Chip("jen s vlaječkou", t.text2, t.panel, icon="flag"))
+        elif f["flag"] is False:
+            chips.append(Chip("bez vlaječky", t.text2, t.panel))
+        if not chips:
+            empty = QLabel("bez omezení")
+            empty.setObjectName("faintLabel")
+            self.chip_row.addWidget(empty)
+        for c in chips:
+            self.chip_row.addWidget(c)
+        key, desc = self.filter_panel.current_sort()
+        self.sort_label.setText(
+            f"Řazení: <b>{SORT_OPTIONS.get(key, key)}</b> {'↓' if desc else '↑'}"
+        )
+        self.compact_btn.setChecked(self._compact_cards)
+
+    def _group_info(self, node) -> tuple[str, str, bool]:
+        """(klíč, nadpis, naléhavé) skupiny karty pro nadpisy v Bez rušení."""
+        idx = self._group_index(node)
+        key = STATUS_GROUPS[idx][0] if idx < len(STATUS_GROUPS) else "other"
+        return key, GROUP_LABELS.get(key, "Ostatní"), key == "elapsed"
 
     # ------------------------------------------------------------------
     # Akce a zkratky
@@ -675,12 +790,15 @@ class MainWindow(QMainWindow):
         # ať se změny hned promítnou (idempotentní, když není co měnit)
         self._recompute_auto_blocks()
         self.view_segment.set_current(self._view_mode)
+        self._place_filter_panel()
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
-            self.stack.setCurrentWidget(self.card_view)
+            self.stack.setCurrentWidget(self.cards_page)
+            self._refresh_chip_bar()
             self.card_view.populate(
                 self._flat_sequence(),
                 compact_fn=self._is_compact_card if self._compact_cards else None,
+                group_fn=self._group_info,
             )
         else:
             self.stack.setCurrentIndex(0)

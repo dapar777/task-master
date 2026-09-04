@@ -1,4 +1,8 @@
-"""Pravý panel s detailem úkolu: metadata, WYSIWYG editor a odkazy na soubory."""
+"""Pravý panel s detailem úkolu: hlavička (cesta, název, chipy), WYSIWYG editor a odkazy.
+
+Hlavička nahrazuje dřívější groupbox „Metadata“: stejná pole (stav, priorita,
+vlaječka, kategorie, tagy, cesta na disku), stejné okamžité ukládání.
+"""
 
 from __future__ import annotations
 
@@ -8,38 +12,29 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox,
     QCheckBox,
-    QGridLayout,
-    QGroupBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPushButton,
     QSizePolicy,
     QSplitter,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from . import icons, theme
 from .constants import PRIORITIES, STATUSES
 from .editor import MarkdownEditor
 from .storage import TaskNode
+from .tasktree import breadcrumb
+from .widgets import HLine, IconButton, SectionLabel
 
 PATH_ROLE = Qt.ItemDataRole.UserRole
 REF_ROLE = Qt.ItemDataRole.UserRole
-
-
-def _icon_btn(text: str, tooltip: str, slot) -> "QPushButton":
-    b = QPushButton(text)
-    b.setToolTip(tooltip)
-    b.setFixedWidth(34)
-    b.clicked.connect(slot)
-    return b
 
 
 class LinkList(QListWidget):
@@ -67,6 +62,40 @@ class LinkList(QListWidget):
             event.acceptProposedAction()
 
 
+class FlagButton(IconButton):
+    """Přepínač vlaječky: obrys = vypnuto, vyplněná v akcentu = zapnuto."""
+
+    def __init__(self, parent=None):
+        super().__init__("flag_outline", "Vlaječka (Ctrl+T)", parent)
+        self.setCheckable(True)
+        self.toggled.connect(lambda _c: self.retheme())
+
+    def retheme(self) -> None:
+        t = theme.current()
+        on = self.isChecked()
+        self.setIcon(icons.icon("flag" if on else "flag_outline", 16, t.accent if on else t.muted))
+
+
+def _section(title: str, hint: str, buttons: list[IconButton]) -> tuple[QWidget, QVBoxLayout]:
+    """Sekce spodního pásu: nadpis, nápověda, ikonová tlačítka; obsah doplní volající."""
+    box = QWidget()
+    v = QVBoxLayout(box)
+    v.setContentsMargins(12, 8, 12, 8)
+    v.setSpacing(4)
+    head = QHBoxLayout()
+    head.setSpacing(8)
+    head.addWidget(SectionLabel(title))
+    if hint:
+        h = QLabel(hint)
+        h.setObjectName("faintLabel")
+        head.addWidget(h)
+    head.addStretch(1)
+    for b in buttons:
+        head.addWidget(b)
+    v.addLayout(head)
+    return box, v
+
+
 class TaskDetailPanel(QWidget):
     metaChanged = Signal(object)   # TaskNode (titulek/stav/... se změnil)
     statusChanged = Signal(object, str)  # (TaskNode, nový stav) – změna z comboboxu
@@ -80,106 +109,98 @@ class TaskDetailPanel(QWidget):
         # funkce id -> TaskNode pro překlad odkazů (nastaví hlavní okno)
         self.resolver = None
 
-        # --- metadata (kompaktní mřížka, 2 sloupce; název se needituje zde) ---
-        # vlaječka jako klikací ikona (vyplněná = zapnuto)
-        self.flag_btn = QToolButton()
-        self.flag_btn.setCheckable(True)
-        self.flag_btn.setAutoRaise(True)
-        self.flag_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.flag_btn.setToolTip("Vlaječka (Ctrl+T)")
-        self.flag_btn.setText("⚐")
-        self.flag_btn.setStyleSheet(
-            "QToolButton{border:none;font-size:20px;color:#b8b8b8;padding:0 2px;}"
-            "QToolButton:checked{color:#e23b3b;}"
-        )
-        self.flag_btn.toggled.connect(self._on_flag_btn)
+        # --- hlavička úkolu: cesta, název s checkboxem, řádek chipů ---
+        self.crumb_label = QLabel("—")
+        self.crumb_label.setObjectName("pathLabel")
+        self.crumb_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
+        self.done_check = QCheckBox()
+        self.done_check.setToolTip("Hotovo (Ctrl+Enter)")
+        self.title_label = QLabel("—")
+        self.title_label.setFont(theme.title_font(16))
+        self.title_label.setWordWrap(True)
+        self.title_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(self.done_check, 0, Qt.AlignmentFlag.AlignTop)
+        title_row.addWidget(self.title_label, 1)
+
+        self.flag_btn = FlagButton()
         self.status_combo = QComboBox()
         for k, v in STATUSES.items():
             self.status_combo.addItem(v, k)
         self.priority_combo = QComboBox()
         for k, v in PRIORITIES.items():
-            self.priority_combo.addItem(v, k)
+            self.priority_combo.addItem(f"P{v}", k)
+        self.priority_combo.setToolTip("Priorita (Ctrl+↑ / Ctrl+↓)")
         self.category_edit = QLineEdit()
         self.category_edit.setPlaceholderText("kategorie")
         self.tags_edit = QLineEdit()
         self.tags_edit.setPlaceholderText("tagy oddělené čárkou")
         self.path_label = QLabel("—")
-        self.path_label.setStyleSheet("color:#999; font-size:10px;")
+        self.path_label.setObjectName("faintLabel")
+        self.path_label.setFont(theme.mono_font(8))
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         # dlouhá cesta nesmí roztahovat panel
         self.path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         # umožni úzké okno – widgety se smí zmenšit
         for _w in (self.status_combo, self.priority_combo, self.category_edit, self.tags_edit):
             _w.setMinimumWidth(46)
+        self.status_combo.setMinimumContentsLength(12)
+        self.priority_combo.setMinimumContentsLength(4)
+        self.category_edit.setMaximumWidth(160)
+        self.tags_edit.setMaximumWidth(220)
 
-        def _lbl(text):
-            la = QLabel(text)
-            la.setStyleSheet("color:#666;")
-            return la
+        chips = QHBoxLayout()
+        chips.setSpacing(8)
+        chips.addWidget(self.status_combo)
+        chips.addWidget(self.priority_combo)
+        chips.addWidget(self.flag_btn)
+        chips.addWidget(self.category_edit)
+        chips.addWidget(self.tags_edit)
+        chips.addStretch(1)
+        chips.addWidget(self.path_label)
 
-        grid = QGridLayout()
-        grid.setContentsMargins(8, 4, 8, 4)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(5)
-        grid.addWidget(_lbl("Stav"), 0, 0)
-        grid.addWidget(self.status_combo, 0, 1)
-        grid.addWidget(_lbl("Priorita"), 0, 2)
-        grid.addWidget(self.priority_combo, 0, 3)
-        grid.addWidget(self.flag_btn, 0, 4, Qt.AlignmentFlag.AlignRight)
-        grid.addWidget(_lbl("Kategorie"), 1, 0)
-        grid.addWidget(self.category_edit, 1, 1)
-        grid.addWidget(_lbl("Tagy"), 1, 2)
-        grid.addWidget(self.tags_edit, 1, 3)
-        grid.addWidget(self.path_label, 2, 0, 1, 5)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
-        meta_box = QGroupBox("Metadata")
-        meta_box.setLayout(grid)
+        header = QWidget()
+        hv = QVBoxLayout(header)
+        hv.setContentsMargins(16, 12, 16, 10)
+        hv.setSpacing(6)
+        hv.addWidget(self.crumb_label)
+        hv.addLayout(title_row)
+        hv.addLayout(chips)
 
         # --- editor ---
         self.editor = MarkdownEditor()
         self.editor.setMinimumWidth(160)
-        editor_box = QGroupBox("Popis")
-        eb = QVBoxLayout(editor_box)
-        eb.setContentsMargins(4, 4, 4, 4)
-        eb.addWidget(self.editor)
 
         # --- odkazy na soubory ---
         self.link_list = LinkList()
         self.link_list.setMinimumWidth(80)
         self.link_list.itemDoubleClicked.connect(lambda _: self._open_link())
-        open_btn = _icon_btn("📂", "Otevřít soubor", self._open_link)
-        folder_btn = _icon_btn("🗁", "Otevřít složku", self._open_folder)
-        remove_btn = _icon_btn("✕", "Odebrat odkaz", self._remove_link)
         self.link_list.filesDropped.connect(self._on_files_dropped)
-        link_btns = QHBoxLayout()
-        link_btns.addWidget(open_btn)
-        link_btns.addWidget(folder_btn)
-        link_btns.addWidget(remove_btn)
-        link_btns.addStretch(1)
-        links_box = QGroupBox("Soubory 📎")
+        open_btn = IconButton("external", "Otevřít soubor")
+        open_btn.clicked.connect(self._open_link)
+        folder_btn = IconButton("folder", "Otevřít složku")
+        folder_btn.clicked.connect(self._open_folder)
+        remove_btn = IconButton("close", "Odebrat odkaz")
+        remove_btn.clicked.connect(self._remove_link)
+        links_box, lb = _section("Soubory", "přetáhni sem soubory", [open_btn, folder_btn, remove_btn])
         links_box.setToolTip("Odkazy na soubory – přetáhni sem soubory")
-        lb = QVBoxLayout(links_box)
-        lb.addWidget(self.link_list)
-        lb.addLayout(link_btns)
+        lb.addWidget(self.link_list, 1)
 
         # --- odkazy na jiné úkoly ---
         self.ref_list = QListWidget()
         self.ref_list.setMinimumWidth(80)
         self.ref_list.itemDoubleClicked.connect(lambda _: self._goto_ref())
-        add_ref_btn = _icon_btn("＋", "Přidat odkaz na úkol", lambda: self.addRefRequested.emit())
-        goto_ref_btn = _icon_btn("➜", "Přejít na úkol", self._goto_ref)
-        rm_ref_btn = _icon_btn("✕", "Odebrat odkaz", self._remove_ref)
-        ref_btns = QHBoxLayout()
-        ref_btns.addWidget(add_ref_btn)
-        ref_btns.addWidget(goto_ref_btn)
-        ref_btns.addWidget(rm_ref_btn)
-        ref_btns.addStretch(1)
-        refs_box = QGroupBox("Úkoly 🔗")
-        rb = QVBoxLayout(refs_box)
-        rb.addWidget(self.ref_list)
-        rb.addLayout(ref_btns)
+        add_ref_btn = IconButton("plus", "Přidat odkaz na úkol")
+        add_ref_btn.clicked.connect(lambda: self.addRefRequested.emit())
+        goto_ref_btn = IconButton("arrow_right", "Přejít na úkol")
+        goto_ref_btn.clicked.connect(self._goto_ref)
+        rm_ref_btn = IconButton("close", "Odebrat odkaz")
+        rm_ref_btn.clicked.connect(self._remove_ref)
+        refs_box, rb = _section("Úkoly", "", [add_ref_btn, goto_ref_btn, rm_ref_btn])
+        rb.addWidget(self.ref_list, 1)
 
         # spodní pás: soubory | úkoly vedle sebe
         bottom_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -190,13 +211,16 @@ class TaskDetailPanel(QWidget):
 
         # --- rozložení ---
         splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(editor_box)
+        splitter.addWidget(self.editor)
         splitter.addWidget(bottom_splitter)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(meta_box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(header)
+        layout.addWidget(HLine())
         layout.addWidget(splitter, 1)
 
         # --- signály ---
@@ -204,6 +228,8 @@ class TaskDetailPanel(QWidget):
         self.priority_combo.currentIndexChanged.connect(lambda: self._apply_field("_priority", self.priority_combo.currentData()))
         self.category_edit.editingFinished.connect(lambda: self._apply_field("_category", self.category_edit.text().strip()))
         self.tags_edit.editingFinished.connect(self._apply_tags)
+        self.flag_btn.toggled.connect(self._on_flag_btn)
+        self.done_check.toggled.connect(self._on_done_check)
 
         # autosave těla po krátké pauze v psaní
         self._save_timer = QTimer(self)
@@ -228,6 +254,9 @@ class TaskDetailPanel(QWidget):
             self.link_list.clear()
             self.ref_list.clear()
             self.flag_btn.setChecked(False)
+            self.done_check.setChecked(False)
+            self.title_label.setText("—")
+            self.crumb_label.setText("—")
             self.path_label.setText("—")
             self.setEnabled(False)
             self._loading = False
@@ -240,7 +269,11 @@ class TaskDetailPanel(QWidget):
         self.category_edit.setText(node.meta.get("_category", "") or "")
         self.tags_edit.setText(", ".join(node.meta.get("_tags", []) or []))
         self.flag_btn.setChecked(bool(node.meta.get("_flag", False)))
+        self.done_check.setChecked(node.meta.get("_status") == "done")
+        self.title_label.setText(node.title)
+        self.crumb_label.setText(breadcrumb(node.parent) if node.parent is not None else "kořen prostoru")
         self.path_label.setText(node.path.as_posix())
+        self.path_label.setToolTip(node.path.as_posix())
         self.editor.set_markdown(node.read_body())
         self._refresh_links()
         self._refresh_refs()
@@ -280,11 +313,21 @@ class TaskDetailPanel(QWidget):
                 # zamítnuto – vrať combo na skutečný stav úkolu bez uložení
                 self._loading = True
                 self._select_data(self.status_combo, self.node.meta.get("_status"))
+                self.done_check.setChecked(self.node.meta.get("_status") == "done")
                 self._loading = False
                 return
         node = self.node
         self._apply_field("_status", value)
+        self._loading = True
+        self.done_check.setChecked(value == "done")
+        self._loading = False
         self.statusChanged.emit(node, value)
+
+    def _on_done_check(self, checked: bool) -> None:
+        """Checkbox u názvu = totéž co stav Hotovo / Ke zpracování v comboboxu."""
+        if self._loading or self.node is None:
+            return
+        self._select_data(self.status_combo, "done" if checked else "todo")
 
     def _confirm_complete(self, count: int) -> bool:
         r = QMessageBox.question(
@@ -319,6 +362,7 @@ class TaskDetailPanel(QWidget):
             return
         self._loading = True
         self._select_data(self.status_combo, status)
+        self.done_check.setChecked(status == "done")
         self._loading = False
 
     def sync_priority(self, priority) -> None:
@@ -335,8 +379,14 @@ class TaskDetailPanel(QWidget):
         self.flag_btn.setChecked(bool(state))
         self._loading = False
 
+    def sync_title(self, title: str) -> None:
+        """Po přejmenování zvenčí (F2 ve stromu) obnov název i cestu v hlavičce."""
+        if self.node is None:
+            return
+        self.title_label.setText(title)
+        self.path_label.setText(self.node.path.as_posix())
+
     def _on_flag_btn(self, checked: bool) -> None:
-        self.flag_btn.setText("⚑" if checked else "⚐")
         self._apply_field("_flag", bool(checked))
 
     # ------------------------------------------------------------------
@@ -346,10 +396,13 @@ class TaskDetailPanel(QWidget):
         self.link_list.clear()
         if self.node is None:
             return
+        t = theme.current()
         for link in self.node.links:
             path = link.get("path", "")
             exists = os.path.exists(path)
-            item = QListWidgetItem(("" if exists else "⚠ ") + link.get("name", path))
+            item = QListWidgetItem(link.get("name", path))
+            item.setIcon(icons.icon("file" if exists else "warning", 14,
+                                    t.text2 if exists else t.status_fg["blocked"]))
             item.setToolTip(path + ("" if exists else "\n(soubor nenalezen)"))
             item.setData(PATH_ROLE, path)
             self.link_list.addItem(item)
@@ -403,13 +456,15 @@ class TaskDetailPanel(QWidget):
         self.ref_list.clear()
         if self.node is None:
             return
+        t = theme.current()
         for rid in self.node.refs:
             target = self.resolver(rid) if self.resolver else None
             title = target.title if target is not None else "(smazaný úkol)"
-            item = QListWidgetItem("↪ " + title)
+            item = QListWidgetItem(title)
+            item.setIcon(icons.icon("reply", 14, t.text2 if target is not None else t.muted))
             item.setData(REF_ROLE, rid)
             if target is not None:
-                item.setToolTip(target.path.as_posix())
+                item.setToolTip(breadcrumb(target))
             else:
                 item.setForeground(Qt.GlobalColor.gray)
             self.ref_list.addItem(item)

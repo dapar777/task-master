@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QToolButton,
 )
 
@@ -39,6 +40,10 @@ class Chip(QLabel):
         self._fg, self._bg = fg, bg
         self.setStyleSheet(theme.chip_qss(fg, bg))
         self._render()
+
+    def plain(self) -> str:
+        """Holý text chipu (text() vrací rich text s tečkou/ikonou)."""
+        return self._text
 
     def set_text(self, text: str, dot: str | None = None, icon: str | None = None) -> None:
         self._text = text
@@ -181,6 +186,7 @@ class SegmentedControl(QFrame):
         b.setObjectName("segmentBtn")
         b.setCheckable(True)
         b.setText(text)
+        b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         if tooltip:
             b.setToolTip(tooltip)

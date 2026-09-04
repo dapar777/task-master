@@ -106,7 +106,7 @@ class SavedFiltersDialog(QDialog):
 
         self.summary_label = QLabel("—")
         self.summary_label.setWordWrap(True)
-        self.summary_label.setStyleSheet("color:#555;")
+        self.summary_label.setObjectName("hint")
         take_btn = QPushButton("Převzít podmínky z aktuálního filtru")
         take_btn.clicked.connect(self._take_conditions)
         cond_box = QVBoxLayout()

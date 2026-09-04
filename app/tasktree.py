@@ -6,17 +6,20 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont
-from PySide6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
-
-from .constants import (
-    PRIORITIES,
-    PRIORITY_COLORS,
-    STATUS_ORDER,
-    STATUSES,
-    status_color,
+from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
+
+from . import icons, theme
+from .constants import PRIORITIES, STATUS_ORDER, STATUSES
 from .storage import TaskNode
 
 NODE_ROLE = Qt.ItemDataRole.UserRole
@@ -108,6 +111,96 @@ def breadcrumb(node: TaskNode) -> str:
     return "  /  ".join(reversed(parts))
 
 
+def _chip_text(node) -> str:
+    """Text chipu stavu: totéž co _status_text, jen bez piktogramů (ty kreslí chip)."""
+    text = _status_text(node)
+    for ch in "⏳⏰⛔":
+        text = text.replace(ch, " ")
+    text = " ".join(text.split())
+    if node.auto_blocked:
+        text = text.replace(" auto", " · auto")
+    return text
+
+
+class _ChipDelegate(QStyledItemDelegate):
+    """Sloupce Stav a Priorita jako chipy místo podbarvených buněk.
+
+    Barvy bere z theme.status_style / priority_style, takže se přepnou
+    s tématem. Sloupec 0 (název + checkbox) nechává na výchozím delegátu.
+    """
+
+    ROW_H = 30
+
+    def sizeHint(self, option, index):
+        s = super().sizeHint(option, index)
+        return QSize(s.width(), max(s.height(), self.ROW_H))
+
+    def paint(self, painter, option, index):
+        col = index.column()
+        if col == 0:
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        widget = opt.widget
+        style = widget.style() if widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        node = index.siblingAtColumn(0).data(NODE_ROLE)
+        if node is None:
+            return
+        icon_name = None
+        dot = None
+        if col == 1:
+            fg, bg, dot = theme.status_style(node)
+            text = _chip_text(node)
+            if node.meta.get("_status") == "snoozed":
+                icon_name, dot = "clock", None
+            elif node.blocked_by or node.auto_blocked:
+                icon_name, dot = "ban", None
+            font = QFont(opt.font)
+            font.setBold(True)
+            font.setPointSizeF(max(7.5, opt.font.pointSizeF() - 1))
+        else:
+            p = node.meta.get("_priority", "")
+            if p in ("", None):
+                return
+            fg, bg, _ramp = theme.priority_style(p)
+            text = str(p)
+            font = theme.mono_font(8.5)
+            font.setBold(True)
+        fm = QFontMetrics(font)
+        pad, h = 7, 20
+        w = fm.horizontalAdvance(text) + 2 * pad + (14 if (dot or icon_name) else 0)
+        r = opt.rect
+        w = min(w, r.width() - 8)
+        if w <= 0:
+            return
+        x, y = r.x() + 4, r.y() + (r.height() - h) // 2
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(bg))
+        painter.drawRoundedRect(QRect(x, y, w, h), 6, 6)
+        tx = x + pad
+        if dot:
+            painter.setBrush(QColor(dot))
+            painter.drawEllipse(tx, y + h // 2 - 3, 6, 6)
+            tx += 12
+        elif icon_name:
+            painter.drawPixmap(tx, y + (h - 12) // 2, icons.pixmap(icon_name, 12, fg))
+            tx += 16
+        painter.setFont(font)
+        painter.setPen(QColor(fg))
+        avail = x + w - pad - tx
+        painter.drawText(
+            QRect(tx, y, max(0, avail), h),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            fm.elidedText(text, Qt.TextElideMode.ElideRight, max(0, avail)),
+        )
+        painter.restore()
+
+
 class TaskTreeWidget(QTreeWidget):
     taskSelected = Signal(object)        # TaskNode | None
     linkDropped = Signal(object)         # TaskNode (odkaz přidán)
@@ -124,11 +217,19 @@ class TaskTreeWidget(QTreeWidget):
         self.resolver = None  # id -> TaskNode (nastaví hlavní okno)
         self.setColumnCount(3)
         self.setHeaderLabels(["Úkol", "Stav", "Priorita"])
-        self.setColumnWidth(0, 280)
-        self.setColumnWidth(1, 110)
-        self.setAlternatingRowColors(True)
+        self.setColumnWidth(0, 300)
+        self.setColumnWidth(1, 150)
+        self.setAlternatingRowColors(False)
+        self.setIndentation(18)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setUniformRowHeights(True)
+        self.setItemDelegate(_ChipDelegate(self))
+        hdr = self.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, hdr.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, hdr.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(2, hdr.ResizeMode.Fixed)
+        self.setColumnWidth(2, 60)
 
         # Drag & drop
         self.setAcceptDrops(True)
@@ -272,14 +373,12 @@ class TaskTreeWidget(QTreeWidget):
         item = QTreeWidgetItem()
         text = label or node.title
         if node.flag:
-            text = "🚩 " + text
+            item.setIcon(0, icons.icon("flag", 14, theme.current().accent))
         status = node.meta.get("_status", "")
         priority = node.meta.get("_priority", "")
+        # texty sloupců zůstávají (řazení, přístupnost); kreslí je chipový delegát
         item.setText(1, _status_text(node))
         item.setText(2, str(PRIORITIES.get(priority, priority)))
-        item.setBackground(1, QBrush(QColor(status_color(node))))
-        if priority in PRIORITY_COLORS:
-            item.setBackground(2, QBrush(QColor(PRIORITY_COLORS[priority])))
 
         # zaškrtávací checkbox = hotovo / nehotovo
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -290,7 +389,7 @@ class TaskTreeWidget(QTreeWidget):
             f = item.font(0)
             f.setStrikeOut(True)
             item.setFont(0, f)
-            item.setForeground(0, QBrush(QColor("#888")))
+            item.setForeground(0, QBrush(QColor(theme.current().done_text)))
 
         n_links = len(node.links)
         n_refs = len(node.refs)

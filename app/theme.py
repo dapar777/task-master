@@ -257,6 +257,12 @@ QToolButton#segmentBtn:hover {{ color: {t.text}; }}
 QToolButton#segmentBtn:checked {{ background: {t.paper}; color: {t.text}; }}
 QLabel#sectionLabel {{ color: {t.muted}; font-size: 8pt; font-weight: 700; }}
 QLabel#groupHeader {{ color: {t.muted}; font-size: 8pt; font-weight: 700; padding: 6px 4px 0 4px; }}
+QScrollArea#cardsArea, QWidget#cardsPage {{ background: {t.cards_bg}; }}
+QFrame#card {{ background: {t.card}; border: 1px solid {t.line}; border-radius: 10px; }}
+QFrame#card:hover {{ border-color: {t.border}; }}
+QFrame#card[selected="true"] {{ border: 2px solid {t.accent}; }}
+QFrame#card QCheckBox::indicator {{ width: 17px; height: 17px; }}
+QFrame#filterHost {{ background: {t.panel}; border-bottom: 1px solid {t.line}; }}
 QLabel#groupHeader[urgent="true"] {{ color: {t.status_fg["blocked"]}; }}
 QLabel#pathLabel {{ color: {t.text2}; }}
 QLabel#faintLabel {{ color: {t.muted}; }}
@@ -272,6 +278,8 @@ QTreeWidget::item, QListWidget::item {{ padding: 3px 4px; border-radius: 6px; }}
 QTreeWidget::item:hover, QListWidget::item:hover {{ background: {t.hover}; }}
 QTreeWidget::item:selected, QListWidget::item:selected {{ background: {t.selection}; color: {t.text}; }}
 QTreeWidget::branch {{ background: transparent; }}
+QTreeWidget::branch:selected {{ background: {t.selection}; }}
+QTreeWidget::branch:hover {{ background: {t.hover}; }}
 QHeaderView::section {{
   background: transparent; color: {t.muted}; font-size: 8pt; font-weight: 700;
   border: 0; border-bottom: 1px solid {t.line}; padding: 5px 6px;
@@ -344,7 +352,6 @@ QScrollBar::handle:horizontal:hover {{ background: {t.muted}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 QScrollArea {{ border: 0; background: transparent; }}
-QScrollArea > QWidget > QWidget {{ background: transparent; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: {t.line}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {t.accent}; border-radius: 2px; }}

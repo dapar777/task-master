@@ -106,7 +106,7 @@ key3 = str(n.path)
 n.set_field("_flag", True)
 cv.populate(seq())
 app.processEvents()
-check("vlajecka je na karte", "🚩" in texts(key3))
+check("vlajecka je na karte", cv._cards[key3].flagged and cv._cards[key3].flag_label is not None)
 
 print("6) POPIS (znacka) se projevi")
 n = node("Ukol 4")
@@ -114,7 +114,7 @@ key4 = str(n.path)
 n.write_body("nejaky popis")
 cv.populate(seq())
 app.processEvents()
-check("znacka popisu je na karte", "📝" in texts(key4))
+check("znacka popisu je na karte", cv._cards[key4].has_body)
 
 print("7) Odebraný úkol z karet zmizí")
 fewer = [n for n in seq() if n.title != "Ukol 5"]

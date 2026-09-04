@@ -1,14 +1,18 @@
-"""Režim „Bez rušení" – úkoly vyhovující filtru jako velké karty přes celou šířku.
+"""Režim „Bez rušení" – úkoly vyhovující filtru jako karty v jednom sloupci.
 
-Karta: nahoře velký název, pod ním cesta k úkolu, pak vlastnosti.
-Po najetí myší na pravou část karty se v plovoucím okénku zobrazí text úkolu.
+Karta: levý pruh v barvě stavu, checkbox, patkový název, cesta, řádek chipů
+(stav, kategorie, tagy, počty odkazů, pořadí); vpravo odznak podúkolů,
+odpočet odkladu s tlačítkem Obnovit a štítek priority. Úsporná karta má jen
+název a cestu. Karty stojí ve skupinách podle stavu s nadpisy.
+Po najetí myší se v plovoucím okénku zobrazí text úkolu.
 """
 
 from __future__ import annotations
 
 import html
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QRectF, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -16,14 +20,17 @@ from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from .constants import PRIORITY_COLORS, STATUSES, status_color
+from . import icons, theme
+from .constants import STATUSES
 from .taskdialog import format_duration
-from .tasktree import breadcrumb
+from .tasktree import _chip_text, breadcrumb
+from .widgets import Badge, Chip, IconButton, PriorityPill, StatusChip
+
+CARD_COLUMN_WIDTH = 860
 
 
 def _incomplete_subtasks(node) -> int:
@@ -32,6 +39,7 @@ def _incomplete_subtasks(node) -> int:
 
 
 def _props_text(node, blocker=None) -> str:
+    """Textový souhrn vlastností (stav, priorita, pořadí, kategorie, tagy, odkazy)."""
     if node.snooze_elapsed():
         status = "⏰ Čas vypršel"   # už nečeká – volá po akci
     else:
@@ -71,18 +79,17 @@ class CardWidget(QFrame):
         self.compact = compact
         self.setObjectName("card")
         self.setProperty("selected", "false")  # stejný typ jako v set_selected
-        # šířka se přizpůsobí oknu; výška roste podle zalomeného obsahu
+        # šířka se přizpůsobí sloupci; výška roste podle zalomeného obsahu
         sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         sp.setHeightForWidth(True)
         self.setSizePolicy(sp)
 
+        t = theme.current()
         status = node.meta.get("_status", "")
         done = status == "done"
-        # pozadí: vlevo dle stavu, vpravo dle priority (poměr 3:1), přechod gradientem
-        self._status_color = status_color(node)
-        p = node.meta.get("_priority")
-        self._prio_color = PRIORITY_COLORS.get(p, "#eeeeee")
-        self._apply_style()
+        # levý pruh v barvě stavu (kreslí paintEvent); priorita = štítek vpravo
+        self._stripe = QColor(theme.status_style(node)[2])
+        blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
 
         # zaškrtávátko stavu (hotovo)
         self.check = QCheckBox()
@@ -90,89 +97,125 @@ class CardWidget(QFrame):
         self.check.setToolTip("Hotovo")
         self.check.toggled.connect(self._on_check)
 
-        # indikace neprázdného popisu přímo v názvu (📝)
-        has_body = node.has_body
-        title_text = ("🚩 " if node.flag else "") + node.title
-        if has_body:
-            title_text += "  📝"
-        title = QLabel(title_text)
-        tcolor = "#888" if done else "#1c1c1c"
-        tdec = "text-decoration: line-through;" if done else ""
-        tsize = 13 if compact else 16
-        title.setStyleSheet(f"font-size:{tsize}px; font-weight:bold; color:{tcolor}; {tdec}")
-        title.setWordWrap(True)
-        if has_body:
-            title.setToolTip("Úkol má popis")
+        # název: patkový, vlaječka jako ikona před ním, hotový přeškrtnutý
+        self.flagged = bool(node.flag)
+        self.title = QLabel(node.title)
+        tf = theme.title_font(11.5 if compact else 14.5)
+        tf.setStrikeOut(done)
+        self.title.setFont(tf)
+        self.title.setWordWrap(True)
+        self.title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        if done:
+            self.title.setStyleSheet(f"color:{t.done_text};")
+        self.flag_label = None
+        if self.flagged:
+            self.flag_label = QLabel()
+            self.flag_label.setPixmap(icons.pixmap("flag", 14, t.accent))
+            self.flag_label.setToolTip("Vlaječka")
 
-        # decentní odznak s počtem nedokončených podúkolů
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(6)
-        title_row.addWidget(title, 1)
+        # pravý shluk: odznak podúkolů, odpočet + Obnovit, popis, priorita
+        right = QHBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(6)
         inc = _incomplete_subtasks(node)
         if inc:
-            badge = QLabel(f"↳ {inc}")
-            badge.setToolTip(f"{inc} nedokončených podúkolů")
-            badge.setStyleSheet(
-                "background:rgba(255,255,255,0.75); color:#8a5a00; border:1px solid #e0b060;"
-                "border-radius:9px; padding:0px 7px; font-size:11px; font-weight:bold;"
-            )
-            title_row.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
-
-        # odpočet odkladu; po doběhnutí místo něj tlačítko Obnovit
+            right.addWidget(Badge(f"↳ {inc}", tooltip=f"{inc} nedokončených podúkolů"))
         self.countdown = None
         self.resume_btn = None
-        if node.meta.get("_status") == "snoozed":
-            self.countdown = QLabel()
-            self.countdown.setStyleSheet(
-                "background:rgba(255,255,255,0.8); color:#8a2a6a;"
-                "border:1px solid #d98cc0; border-radius:9px;"
-                "padding:0px 7px; font-size:11px; font-weight:bold;"
-            )
-            title_row.addWidget(self.countdown, 0, Qt.AlignmentFlag.AlignTop)
-            self.resume_btn = QToolButton()
-            self.resume_btn.setText("↻ Obnovit")
-            self.resume_btn.setToolTip("Odložit znovu o stejný interval")
-            self.resume_btn.setAutoRaise(True)
-            self.resume_btn.setStyleSheet(
-                "QToolButton { color:#8a2a6a; font-size:11px; font-weight:bold; }"
-            )
+        if status == "snoozed":
+            self.countdown = StatusChip("snoozed", "", icon="clock", mono=True)
+            right.addWidget(self.countdown)
+            self.resume_btn = IconButton("rotate", "Odložit znovu o stejný interval",
+                                         text="Obnovit", framed=True)
             self.resume_btn.clicked.connect(lambda: self.resumeRequested.emit(self.node))
-            title_row.addWidget(self.resume_btn, 0, Qt.AlignmentFlag.AlignTop)
+            right.addWidget(self.resume_btn)
             self.refresh_countdown()
+        self.has_body = bool(node.has_body)
+        if self.has_body:
+            doc = QLabel()
+            doc.setPixmap(icons.pixmap("doc", 14, t.muted))
+            doc.setToolTip("Úkol má popis")
+            right.addWidget(doc)
+        right.addWidget(PriorityPill(node.meta.get("_priority", "?")))
 
-        blocker = resolver(node.blocked_by) if (resolver and node.blocked_by) else None
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(10)
+        if self.flag_label is not None:
+            title_row.addWidget(self.flag_label, 0, Qt.AlignmentFlag.AlignTop)
+            title_row.setSpacing(6)
+        title_row.addWidget(self.title, 1)
+        title_row.addLayout(right, 0)
+        title_row.setAlignment(right, Qt.AlignmentFlag.AlignTop)
 
+        # cesta; úsporná karta si k ní připojí blokující info, ať se neztratí
         path_text = breadcrumb(node)
-        # úsporná karta si blokující info připojí k cestě, ať se neztratí
         if compact and node.blocked_by:
-            path_text += "   ⛔ " + (blocker.title if blocker else "(smazaný úkol)")
+            path_text += "   ·   blokuje: " + (blocker.title if blocker else "(smazaný úkol)")
         elif compact and node.auto_blocked:
-            path_text += "   ⛔ auto"
-        path = QLabel(path_text)
-        path.setStyleSheet("color:#666; font-size:11px;")
-        path.setWordWrap(True)  # ať nediktuje minimální šířku karty
+            path_text += "   ·   blokováno automaticky"
+        self.path = QLabel(path_text)
+        self.path.setObjectName("pathLabel")
+        self.path.setWordWrap(True)  # ať nediktuje minimální šířku karty
 
         left = QVBoxLayout()
-        left.setSpacing(1 if compact else 3)
+        left.setContentsMargins(0, 0, 0, 0)
+        left.setSpacing(2 if compact else 6)
         left.addLayout(title_row)
-        left.addWidget(path)
-        # úsporné zobrazení: bez řádku vlastností (stav/priorita/pořadí)
+        left.addWidget(self.path)
+
+        # plná karta: řádek chipů (stav, kategorie, tagy, odkazy, pořadí)
         if not compact:
-            props = QLabel(_props_text(node, blocker))
-            props.setStyleSheet("color:#333; font-size:12px;")
-            props.setWordWrap(True)
-            left.addWidget(props)
+            props = QHBoxLayout()
+            props.setContentsMargins(0, 0, 0, 0)
+            props.setSpacing(8)
+            icon = "ban" if (node.blocked_by or node.auto_blocked) else None
+            chip = StatusChip(status, _chip_text(node), icon=icon)
+            if blocker is not None:
+                chip.setToolTip(f"Blokuje: {blocker.title}")
+            elif node.blocked_by:
+                chip.setToolTip("Blokující úkol byl smazán")
+            elif node.auto_blocked:
+                chip.setToolTip("Blokováno automaticky – podúkoly čekají/blokují")
+            props.addWidget(chip)
+            cat = node.meta.get("_category", "")
+            if cat:
+                props.addWidget(Chip(html.escape(cat), t.text2, t.panel))
+            for tag in node.meta.get("_tags", []) or []:
+                props.addWidget(Chip("#" + html.escape(str(tag)), t.text2, t.panel))
+            if node.links:
+                c = Chip(str(len(node.links)), t.text2, t.panel, icon="external")
+                c.setToolTip(f"{len(node.links)} odkazů na soubory")
+                props.addWidget(c)
+            if node.refs:
+                c = Chip(str(len(node.refs)), t.text2, t.panel, icon="link")
+                c.setToolTip(f"{len(node.refs)} odkazů na úkoly")
+                props.addWidget(c)
+            order = QLabel(f"pořadí {node.order:g}")
+            order.setObjectName("faintLabel")
+            props.addWidget(order)
+            props.addStretch(1)
+            left.addLayout(props)
 
         row = QHBoxLayout(self)
-        m = 4 if compact else 8
-        row.setContentsMargins(10, m, 10, m)
+        m = 8 if compact else 12
+        row.setContentsMargins(18, m, 14, m)
+        row.setSpacing(12)
         row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(left, 1)
 
         # náhled textu jako tooltip celé karty (zobrazí se u kurzoru i vpravo)
         self._body_provider = lambda n=node: n.read_body()
         self._tip_loaded = False
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(self._stripe)
+        p.drawRoundedRect(QRectF(1.5, 9, 4, max(4, self.height() - 18)), 2, 2)
+        p.end()
 
     def enterEvent(self, event):
         if not self._tip_loaded:
@@ -192,45 +235,21 @@ class CardWidget(QFrame):
         rem = self.node.snooze_remaining()
         if rem is None:
             # stav bez termínu (vybraný comboboxem) – ať to není prázdný odznak
-            self.countdown.setText("⏰ bez termínu")
+            self.countdown.setProperty("phase", "none")
+            self.countdown.update_status("blocked", "bez termínu", icon="clock")
             self.countdown.setToolTip("Odklad nemá nastavený čas – nastav ho znovu")
-            self.countdown.setStyleSheet(
-                "background:#ffd9d9; color:#b02020;"
-                "border:1px solid #e08080; border-radius:9px;"
-                "padding:0px 7px; font-size:11px; font-weight:bold;"
-            )
             return
         if rem > 0:
-            self.countdown.setText(f"⏳ {format_duration(rem)}")
+            self.countdown.setProperty("phase", "running")
+            self.countdown.update_status("snoozed", format_duration(rem), icon="clock")
             self.countdown.setToolTip("Zbývá do konce odkladu")
-            self.countdown.setStyleSheet(
-                "background:rgba(255,255,255,0.8); color:#8a2a6a;"
-                "border:1px solid #d98cc0; border-radius:9px;"
-                "padding:0px 7px; font-size:11px; font-weight:bold;"
-            )
         else:
-            self.countdown.setText("⏰ vypršelo")
+            self.countdown.setProperty("phase", "elapsed")
+            self.countdown.update_status("blocked", "vypršelo", icon="clock")
             self.countdown.setToolTip("Odklad skončil – úkol čeká na tebe")
-            self.countdown.setStyleSheet(
-                "background:#ffd9d9; color:#b02020;"
-                "border:1px solid #e08080; border-radius:9px;"
-                "padding:0px 7px; font-size:11px; font-weight:bold;"
-            )
 
     def _on_check(self, checked: bool) -> None:
         self.statusToggled.emit(self.node, "done" if checked else "todo")
-
-    def _apply_style(self) -> None:
-        # vodorovný přechod: stav vlevo (~3/4) -> priorita vpravo (~1/4)
-        grad = (
-            "qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-            f"stop:0 {self._status_color}, stop:0.6 {self._status_color}, "
-            f"stop:0.9 {self._prio_color}, stop:1 {self._prio_color})"
-        )
-        self.setStyleSheet(
-            f"QFrame#card {{ background:{grad}; border:1px solid #c8c8c8; border-radius:8px; }}"
-            f"QFrame#card[selected=\"true\"] {{ background:{grad}; border:2px solid #1a6fd6; }}"
-        )
 
     def set_selected(self, on: bool) -> None:
         # Přepočet stylu (unpolish/polish) je drahý a volá se pro každou kartu
@@ -267,35 +286,54 @@ class CardView(QScrollArea):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("cardsArea")
         self.setWidgetResizable(True)
-        # karty se přizpůsobí šířce okna – nikdy vodorovné rolování
+        # karty se přizpůsobí šířce sloupce – nikdy vodorovné rolování
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # stránka (nažloutlý podklad) se sloupcem karet uprostřed
         self.container = QWidget()
-        self.vbox = QVBoxLayout(self.container)
-        self.vbox.setContentsMargins(10, 10, 10, 10)
-        self.vbox.setSpacing(8)
+        self.container.setObjectName("cardsPage")
+        outer = QHBoxLayout(self.container)
+        outer.setContentsMargins(24, 16, 24, 16)
+        # sloupec bere celou šířku až do maxima; rozpěrky (váha 0) vezmou jen
+        # to, co zbyde nad maximem, takže sloupec stojí uprostřed
+        outer.addStretch(0)
+        self.column = QWidget()
+        self.column.setMaximumWidth(CARD_COLUMN_WIDTH)
+        self.column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.vbox = QVBoxLayout(self.column)
+        self.vbox.setContentsMargins(0, 0, 0, 0)
+        self.vbox.setSpacing(10)
         self.vbox.addStretch(1)
+        outer.addWidget(self.column, 1)
+        outer.addStretch(0)
         self.setWidget(self.container)
         self._cards: dict[str, CardWidget] = {}
         self._stamps: dict[str, tuple] = {}  # otisk obsahu karty (recyklace)
+        self._headers: dict[str, QLabel] = {}  # nadpisy skupin (recyklují se)
         self._order: list[str] = []  # cesty v zobrazeném pořadí
         self._selected: set[str] = set()   # všechny označené cesty
         self._focus: str | None = None     # aktuální (fokus) karta
         self._anchor: str | None = None    # kotva pro výběr rozsahu (Shift)
         self.resolver = None               # id -> TaskNode (nastaví hlavní okno)
         self._empty = QLabel("Žádné úkoly nevyhovují filtru.")
+        self._empty.setObjectName("faintLabel")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty.setStyleSheet("color:#999; font-size:14px;")
 
-    def populate(self, nodes, compact_fn=None) -> None:
-        """Naplní karty. compact_fn(node) -> True pro úspornou (nižší) kartu."""
+    def populate(self, nodes, compact_fn=None, group_fn=None) -> None:
+        """Naplní karty.
+
+        compact_fn(node) -> True pro úspornou (nižší) kartu.
+        group_fn(node) -> (klíč, nadpis, naléhavé) skupiny; při změně klíče
+        se mezi karty vloží nadpis skupiny.
+        """
         vpos = self.verticalScrollBar().value()
         # Bez tohoto Qt překresluje po každé přidané kartě a nová karta bez
         # rodiče na okamžik problikne jako samostatné okno mimo aplikaci.
         self.container.setUpdatesEnabled(False)
         try:
-            self._rebuild(nodes, compact_fn)
+            self._rebuild(nodes, compact_fn, group_fn)
         finally:
             self.container.setUpdatesEnabled(True)
 
@@ -316,7 +354,7 @@ class CardView(QScrollArea):
             b = self.resolver(node.blocked_by)
             blocker = b.title if b else ""
         return (
-            node.title, node.flag, node.has_body, compact,
+            node.title, node.flag, node.has_body, compact, theme.current().name,
             node.meta.get("_status"), node.meta.get("_priority"),
             node.meta.get("_category"), tuple(node.meta.get("_tags") or ()),
             node.blocked_by, node.auto_blocked, blocker,
@@ -328,7 +366,7 @@ class CardView(QScrollArea):
     def _new_card(self, node, compact: bool) -> "CardWidget":
         # rodič HNED v konstruktoru – widget bez rodiče je top-level okno,
         # které Qt stihne zobrazit dřív, než ho addWidget vloží do layoutu
-        card = CardWidget(node, parent=self.container,
+        card = CardWidget(node, parent=self.column,
                           resolver=self.resolver, compact=compact)
         card.selected.connect(self._on_card_clicked)
         card.opened.connect(self.cardOpened)
@@ -337,7 +375,19 @@ class CardView(QScrollArea):
         card.resumeRequested.connect(self.cardResumeRequested)
         return card
 
-    def _rebuild(self, nodes, compact_fn) -> None:
+    def _header(self, key: str, label: str, urgent: bool) -> QLabel:
+        h = self._headers.get(key)
+        if h is None:
+            h = QLabel(label.upper(), self.column)
+            h.setObjectName("groupHeader")
+            self._headers[key] = h
+        if h.property("urgent") != ("true" if urgent else "false"):
+            h.setProperty("urgent", "true" if urgent else "false")
+            h.style().unpolish(h)
+            h.style().polish(h)
+        return h
+
+    def _rebuild(self, nodes, compact_fn, group_fn) -> None:
         """Přestaví seznam karet, ale recykluje ty, které se nezměnily.
 
         Stavba karty i její layout jsou drahé a rostou s celkovým počtem úkolů,
@@ -358,16 +408,29 @@ class CardView(QScrollArea):
         self._cards = {}
         self._order = []
         self._stamps = {}
+        used_headers: set[str] = set()
 
         if not nodes:
             for card in old_cards.values():
                 card.setParent(None)
                 card.deleteLater()
+            for h in self._headers.values():
+                h.hide()
+            self._empty.setParent(self.column)
             self.vbox.addWidget(self._empty)
             self.vbox.addStretch(1)
             return
 
+        last_group = None
         for node in nodes:
+            if group_fn is not None:
+                gkey, glabel, gurgent = group_fn(node)
+                if gkey != last_group:
+                    h = self._header(gkey, glabel, gurgent)
+                    h.show()
+                    self.vbox.addWidget(h)
+                    used_headers.add(gkey)
+                    last_group = gkey
             compact = bool(compact_fn(node)) if compact_fn else False
             key = str(node.path)
             stamp = self._card_stamp(node, compact)
@@ -379,11 +442,14 @@ class CardView(QScrollArea):
                 card = self._new_card(node, compact)
             else:
                 card.node = node  # po load() je uzel nová instance
-            self.vbox.addWidget(card)  # roztáhne se na šířku okna
+            self.vbox.addWidget(card)  # roztáhne se na šířku sloupce
             self._cards[key] = card
             self._order.append(key)
             self._stamps[key] = stamp
         self.vbox.addStretch(1)
+        for k, h in self._headers.items():
+            if k not in used_headers:
+                h.hide()
 
         # co zbylo, ve zobrazení už není – okamžité odpojení, aby po zbytek
         # eventloopu neprosvítali „duchové" karet
@@ -517,23 +583,23 @@ class CardView(QScrollArea):
             self.cardSelected.emit(card.node)
 
     def contextMenuEvent(self, event):
-        """Klávesa kontextového menu (Menu / Shift+F10) i v Bez rušení.
-
-        Karta sama událost dostane jen když má fokus, jenže ten drží tento
-        scroll area – bez tohohle by klávesa v kartách nefungovala vůbec.
-        Menu se otevře u aktivní karty; když žádná není, událost pustíme dál.
-        """
-        card = self._cards.get(self._focus)
-        if card is None:
-            super().contextMenuEvent(event)
-            return
+        """Klávesa Menu / Shift+F10: menu pro aktivní kartu (umístí se do jejího středu)."""
         if event.reason() == event.Reason.Keyboard:
-            # u klávesy nemá kurzor smysl – ukaž menu u samotné karty
+            card = self._cards.get(self._focus)
+            if card is None:
+                event.ignore()
+                return
             pos = card.mapToGlobal(card.rect().center())
-        else:
-            pos = event.globalPos()
-        self.cardContextMenu.emit(card.node, pos)
-        event.accept()
+            path = str(card.node.path)
+            if path not in self._selected:
+                self._selected = {path}
+                self._anchor = path
+                self._apply_selection_styles()
+                self.cardSelected.emit(card.node)
+            self.cardContextMenu.emit(card.node, pos)
+            event.accept()
+            return
+        super().contextMenuEvent(event)
 
     def keyPressEvent(self, event):
         key = event.key()
