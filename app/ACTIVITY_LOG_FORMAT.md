@@ -22,7 +22,7 @@ Soubor je **append-only**. Jeden řádek = jedna změna aktivního úkolu = jede
 platný JSON objekt. Řádky se od sebe oddělují `\n`. Soubor lze celý načíst
 i po řádcích (`for line in f`), nikdy není potřeba parsovat jako jeden celek.
 
-Kódování: UTF-8, bez BOM. Zápis je "append" (`open(path, "a", encoding="utf-8")"`),
+Kódování: UTF-8, bez BOM. Zápis je "append" (`open(path, "a", encoding="utf-8")`),
 takže log roste a nikdy se nepřepisuje ani nemaže sám (rotaci/mazání řeší
 uživatel ručně, pokud naroste).
 

@@ -117,10 +117,15 @@ class MainWindow(QMainWindow):
     def _current_node(self, node) -> None:
         prev = self.__current_node
         self.__current_node = node
+        if prev is node or self._activity_logger is None:
+            return
+        # stejný úkol v nové instanci (po load()) = žádná změna; úkoly bez
+        # _id (stará data) se porovnávají jen identitou objektu
         prev_id = prev.task_id if prev is not None else None
         new_id = node.task_id if node is not None else None
-        if prev_id != new_id and self._activity_logger is not None:
-            self._activity_logger.log_active_task(node)
+        if new_id and prev_id == new_id:
+            return
+        self._activity_logger.log_active_task(node)
 
     # ------------------------------------------------------------------
     # UI
