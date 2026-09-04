@@ -86,6 +86,24 @@ def icon(name: str, size: int = 16, color: str | None = None) -> QIcon:
     return QIcon(pixmap(name, size, color))
 
 
+_files: dict[tuple, str] = {}
+
+
+def png_file(name: str, size: int = 12, color: str | None = None) -> str:
+    """Cesta k PNG ikony – pro <img> v rich textu (QLabel), kde QIcon nejde."""
+    color = color or theme.current().text2
+    key = (name, size, color)
+    path = _files.get(key)
+    if path:
+        return path
+    d = theme._asset_dir()
+    p = d / f"{name}-{size}-{color.lstrip('#')}.png"
+    if not p.exists():
+        pixmap(name, size, color).save(p.as_posix(), "PNG")
+    _files[key] = p.as_posix()
+    return _files[key]
+
+
 def clear_cache() -> None:
     """Po změně tématu – ikony se překreslí v nových barvách."""
     _cache.clear()

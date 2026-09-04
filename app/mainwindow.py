@@ -10,11 +10,15 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -54,6 +58,7 @@ from .taskdialog import (
 )
 from .undo import UndoManager
 from .tasktree import TaskTreeWidget, breadcrumb, sort_flat, sort_nodes
+from .widgets import IconButton, PrimaryButton, SegmentedControl
 
 VIEW_MODES = ("tree", "list", "cards")
 
@@ -182,7 +187,15 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.addWidget(splitter)        # index 0 = strom/seznam + detail
         self.stack.addWidget(self.card_view)  # index 1 = karty
-        self.setCentralWidget(self.stack)
+
+        # hlavička (název, prostor, přepínač zobrazení, hledání, příkazy, nový úkol)
+        central = QWidget()
+        cv = QVBoxLayout(central)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
+        cv.addWidget(self._build_header())
+        cv.addWidget(self.stack, 1)
+        self.setCentralWidget(central)
 
         self.status = self.statusBar()
         # dnešní počty (vytvořené/dokončené) vlevo, cesta k prostoru vpravo
@@ -191,6 +204,58 @@ class MainWindow(QMainWindow):
         self.status.addPermanentWidget(self.today_label)
         self.ws_label = QLabel("")
         self.status.addPermanentWidget(self.ws_label)
+
+    def _build_header(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("headerBar")
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(16, 8, 16, 8)
+        lay.setSpacing(12)
+
+        self.logo_label = QLabel()
+        self.logo_label.setFixedSize(20, 20)
+        title = QLabel(APP_NAME)
+        title.setFont(theme.title_font(12.5))
+        self.header_ws = QLabel("")
+        self.header_ws.setObjectName("faintLabel")
+        self.header_ws.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.header_ws.setMinimumWidth(60)
+        brand = QHBoxLayout()
+        brand.setSpacing(8)
+        brand.addWidget(self.logo_label)
+        brand.addWidget(title)
+        brand.addWidget(self.header_ws, 1)
+        lay.addLayout(brand, 1)
+
+        self.view_segment = SegmentedControl()
+        self.view_segment.add("tree", "Strom", "tree", "Zobrazení: strom")
+        self.view_segment.add("list", "Seznam", "list", "Zobrazení: seznam")
+        self.view_segment.add("cards", "Bez rušení", "cards", "Zobrazení: bez rušení (karty)")
+        self.view_segment.set_current(self._view_mode)
+        self.view_segment.changed.connect(self._set_view_mode)
+        lay.addWidget(self.view_segment)
+
+        search = self.filter_panel.name_edit
+        search.setFixedWidth(260)
+        search.setClearButtonEnabled(True)
+        self._search_action = search.addAction(icons.icon("search"), QLineEdit.ActionPosition.LeadingPosition)
+        lay.addWidget(search)
+
+        palette_btn = IconButton("command", "Příkazová paleta (Ctrl+Shift+P)", text="Příkazy", framed=True)
+        palette_btn.clicked.connect(lambda: self.act["app.command_palette"].trigger())
+        lay.addWidget(palette_btn)
+
+        new_btn = PrimaryButton("Nový úkol", "plus")
+        new_btn.setToolTip("Nový úkol (Ctrl+N)")
+        new_btn.clicked.connect(lambda: self.act["task.new"].trigger())
+        lay.addWidget(new_btn)
+        self._retheme_header()
+        return bar
+
+    def _retheme_header(self) -> None:
+        t = theme.current()
+        self.logo_label.setPixmap(icons.pixmap("check", 20, t.accent))
+        self._search_action.setIcon(icons.icon("search"))
 
     # ------------------------------------------------------------------
     # Akce a zkratky
@@ -378,6 +443,7 @@ class MainWindow(QMainWindow):
             hook = getattr(w, "retheme", None)
             if callable(hook):
                 hook()
+        self._retheme_header()
         if self.workspace:
             self._populate()
             if self._current_node is not None:
@@ -489,6 +555,8 @@ class MainWindow(QMainWindow):
             self.workspace.load()
         self.settings.setValue("workspace", str(path))
         self.ws_label.setText(f"Prostor: {path}")
+        self.header_ws.setText(str(path))
+        self.header_ws.setToolTip(str(path))
         self._restore_state()
 
     def _restore_state(self) -> None:
@@ -606,6 +674,7 @@ class MainWindow(QMainWindow):
         # automatické (od)blokování podle stavu podúkolů – před vykreslením,
         # ať se změny hned promítnou (idempotentní, když není co měnit)
         self._recompute_auto_blocks()
+        self.view_segment.set_current(self._view_mode)
         sort_key, sort_desc = self.filter_panel.current_sort()
         if self._view_mode == "cards":
             self.stack.setCurrentWidget(self.card_view)

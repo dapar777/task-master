@@ -163,8 +163,9 @@ class FilterPanel(QWidget):
         self.sort_dir_combo.addItem("Vzestupně ↑", False)
         self.sort_dir_combo.addItem("Sestupně ↓", True)
 
+        # name_edit (hledání v názvu) stojí v hlavičce okna – hlavní okno si ho
+        # z panelu vezme; zůstává ale kritériem filtru (current_filters)
         form = QFormLayout()
-        form.addRow("Název:", self.name_edit)
         form.addRow("Stav:", self.status_box)
         form.addRow("Priorita:", prio_widget)
         form.addRow("Kategorie:", self.category_box)
