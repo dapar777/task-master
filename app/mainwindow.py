@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import icons, theme
+from . import appicon, icons, theme
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import CommandPalette
@@ -239,22 +239,13 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(16, 8, 16, 8)
         lay.setSpacing(12)
 
-        self.logo_label = QLabel()
-        self.logo_label.setFixedSize(20, 20)
-        title = QLabel(APP_NAME)
-        title.setFont(theme.title_font(12.5))
-        title.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        self.header_title = title
+        # bez loga a názvu aplikace (má je titulek okna a hlavní panel) –
+        # vlevo jen cesta k prostoru, která se smí oříznout
         self.header_layout = lay
         self.header_ws = QLabel("")
         self.header_ws.setObjectName("faintLabel")
         self.header_ws.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        brand = QHBoxLayout()
-        brand.setSpacing(8)
-        brand.addWidget(self.logo_label)
-        brand.addWidget(title)
-        brand.addWidget(self.header_ws, 1)
-        lay.addLayout(brand, 1)
+        lay.addWidget(self.header_ws, 1)
 
         self.view_segment = SegmentedControl()
         self.view_segment.add("tree", "Strom", "tree", "Zobrazení: strom")
@@ -292,7 +283,6 @@ class MainWindow(QMainWindow):
         if compact == self._header_compact:
             return
         self._header_compact = compact
-        self.header_title.setVisible(not compact)
         self.header_layout.setSpacing(8 if compact else 12)
         self.header_layout.setContentsMargins(10 if compact else 16, 8, 10 if compact else 16, 8)
         self.view_segment.set_compact(compact)
@@ -303,9 +293,20 @@ class MainWindow(QMainWindow):
         self.new_btn.setText("" if compact else "Nový úkol")
 
     def _retheme_header(self) -> None:
-        t = theme.current()
-        self.logo_label.setPixmap(icons.pixmap("check", 20, t.accent))
+        variant = "dark" if theme.is_dark() else "light"
+        icon = appicon.app_icon(variant)
+        # ikona okna i hlavního panelu = ikona Terakota ve variantě tématu
+        self.setWindowIcon(icon)
+        QApplication.instance().setWindowIcon(icon)
+        appicon.apply_taskbar_identity(self, variant)
         self._search_action.setIcon(icons.icon("search"))
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # AppUserModel vlastnosti jdou zapsat až na zobrazené okno (HWND)
+        if not getattr(self, "_taskbar_done", False):
+            self._taskbar_done = True
+            appicon.apply_taskbar_identity(self, "dark" if theme.is_dark() else "light")
 
     def _build_chip_bar(self) -> QWidget:
         """Lišta nad kartami: aktuální filtr jako chipy, Kritéria, řazení, úsporné karty."""

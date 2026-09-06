@@ -77,6 +77,12 @@ změnit zvenčí (otevření prostoru, F5, undo ze zálohy).
 `deleted`) místo kopie workspace; `snapshot` je jen fallback. Před operací,
 která mění metadata více uzlů, ulož je přes `undo.push_fields(...)`.
 
+**Ikona a hlavní panel** – ikona je ze sady Terakota (`assets/icons/task-master-{light,dark}.ico`,
+`app/appicon.py`). Python z Microsoft Store je MSIX balíček a Windows v hlavním panelu ukazuje
+logo balíčku (Python) místo ikony okna; `MainWindow.showEvent` a `_retheme_header` proto volají
+`appicon.apply_taskbar_identity()`, které zapíše AppUserModel vlastnosti na HWND přes pywin32
+`propsys` (bez pywin32 se tiše přeskočí, ikona okna zůstane).
+
 **Vzhled** – `app/theme.py` je jediný zdroj barev (Solarized, světlé/tmavé
 tokeny `Tokens`, `status_style()`, `priority_style()`, `title_font()`, QSS).
 Nikde jinde hex barvy nepiš (`tests/test_theme.py` to hlídá; výjimka je
@@ -84,7 +90,17 @@ legacy `constants.STATUS_COLORS` pro staré testy). Ikony jsou kreslené
 (`icons.icon("flag")`), ne emoji; společné prvky (Chip, StatusChip,
 PriorityPill, SegmentedControl, IconButton, TitleLabel) jsou v `app/widgets.py`.
 Widget, který si barvu drží mimo QSS, má metodu `retheme()` – hlavní okno ji
-po přepnutí tématu zavolá na všech potomcích.
+po přepnutí tématu zavolá na všech potomcích. Obrázky pro QSS (`url(...)`)
+generuje `theme._write_asset()` jako SVG do temp adresáře, ne do repa.
+
+**Úzké okno** (jde zúžit na ~350 px) – tři nezávislé prahy, každý ve své třídě:
+`MainWindow.HEADER_COMPACT_BELOW` (hlavička jen s ikonami),
+`CardView.NARROW_BELOW` (pravý shluk karty pod název; `_narrow` je součástí
+`_card_stamp`) a `TaskTreeWidget._fit_columns()` (nejdřív se zužuje sloupec
+Stav, pak Priorita, Úkol až naposled). Široké popisky mají
+`QSizePolicy.Ignored` vodorovně a karty nesmí sloupci diktovat minimum – nový
+widget v hlavičce, detailu či kartě, který má pevnou šířku, celé okno zase
+„zamkne" na širší minimum.
 
 ## Invarianty, které se snadno rozbijí
 

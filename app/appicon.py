@@ -1,82 +1,92 @@
-"""Moderní ikona aplikace – zaškrtnutý checkbox, kreslená v kódu (bez bitmap souborů)."""
+"""Ikona aplikace ze sady Terakota (assets/icons) a její prosazení v hlavním panelu.
+
+Ikona je terakotový disk s prstencem bez pozadí (viz c:/code/terakota-icons);
+tmavá varianta má krémový prstenec (na tmavé téma), světlá espresso (na světlé).
+
+Windows a Python z Microsoft Store (MSIX): hlavní panel u balíčkovaných
+procesů ukazuje logo *balíčku* (Python) a ikonu okna ignoruje. Samotné
+SetCurrentProcessExplicitAppUserModelID nestačí – je třeba nastavit
+AppUserModel vlastnosti přímo na HWND okna (pywin32 propsys): id, název,
+ikona a příkaz pro znovuspuštění. Bez pywin32 se krok tiše přeskočí.
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (
-    QBrush,
-    QColor,
-    QIcon,
-    QLinearGradient,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPixmap,
-)
+import sys
+from pathlib import Path
 
-from . import theme
+from PySide6.QtGui import QIcon
 
-_SIZES = (16, 24, 32, 48, 64, 128, 256)
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons"
+APP_USER_MODEL_ID = "TaskMaster.App.2"
 
 
-def _draw(size: int) -> QPixmap:
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-    m = size * 0.09
-    rect = QRectF(m, m, size - 2 * m, size - 2 * m)
-    radius = size * 0.24
-
-    # zaoblený dlaždicový podklad v akcentu tématu (Solarized oranžová -> žlutá)
-    grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    grad.setColorAt(0.0, QColor(theme.ORANGE))
-    grad.setColorAt(1.0, QColor(theme.YELLOW))
-    path = QPainterPath()
-    path.addRoundedRect(rect, radius, radius)
-    p.fillPath(path, QBrush(grad))
-
-    # jemné světlo nahoře
-    hi = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.center().y()))
-    hi.setColorAt(0.0, QColor(255, 255, 255, 60))
-    hi.setColorAt(1.0, QColor(255, 255, 255, 0))
-    p.fillPath(path, QBrush(hi))
-
-    # zaškrtnutí (checkmark) v krémové base3
-    pen = QPen(QColor(theme.BASE3))
-    pen.setWidthF(size * 0.11)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    p.setPen(pen)
-    check = QPainterPath()
-    check.moveTo(size * 0.30, size * 0.52)
-    check.lineTo(size * 0.44, size * 0.66)
-    check.lineTo(size * 0.71, size * 0.34)
-    p.drawPath(check)
-
-    p.end()
-    return pm
+def icon_path(variant: str = "dark") -> Path:
+    variant = "light" if variant == "light" else "dark"
+    return ASSETS_DIR / f"task-master-{variant}.ico"
 
 
-def make_app_icon() -> QIcon:
-    icon = QIcon()
-    for s in _SIZES:
-        icon.addPixmap(_draw(s))
+def app_icon(variant: str = "dark") -> QIcon:
+    """QIcon pro dané téma („light" / „dark"); .ico (16–256 px) + PNG 512 px."""
+    variant = "light" if variant == "light" else "dark"
+    ico = icon_path(variant)
+    png = ASSETS_DIR / f"task-master-{variant}-512.png"
+    icon = QIcon(str(ico)) if ico.exists() else QIcon()
+    if png.exists():
+        icon.addFile(str(png))
     return icon
 
 
-def save_icon_files(directory) -> None:
-    """Best-effort uložení PNG/ICO (pro zástupce). Selhání ignorujeme."""
-    from pathlib import Path
+def make_app_icon() -> QIcon:
+    """Ikona pro aktuální téma (zpětně kompatibilní název)."""
+    from . import theme
 
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
+    return app_icon("dark" if theme.is_dark() else "light")
+
+
+def claim_process_identity() -> None:
+    """Před vytvořením QApplication: vlastní AppUserModelID procesu, aby Windows
+    okno neseskupoval pod python.exe."""
+    if sys.platform != "win32":
+        return
     try:
-        _draw(256).save(str(directory / "icon.png"), "PNG")
+        import ctypes
+
+        func = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
+        func.argtypes = [ctypes.c_wchar_p]
+        func.restype = ctypes.c_long
+        func(APP_USER_MODEL_ID)
     except Exception:
         pass
+
+
+def apply_taskbar_identity(window, variant: str) -> bool:
+    """Nastaví AppUserModel vlastnosti na HWND zobrazeného okna (Windows).
+
+    Volat po show() a znovu při změně tématu (jiná varianta ikony).
+    Vrací True, když se vlastnosti podařilo zapsat.
+    """
+    if sys.platform != "win32" or not window.isVisible():
+        return False
     try:
-        _draw(256).save(str(directory / "icon.ico"), "ICO")
+        from win32com.propsys import propsys, pscon
     except Exception:
-        pass
+        return False
+    ico = icon_path(variant)
+    try:
+        ps = propsys.SHGetPropertyStoreForWindow(int(window.winId()))
+        ps.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(APP_USER_MODEL_ID))
+        ps.SetValue(pscon.PKEY_AppUserModel_RelaunchDisplayNameResource,
+                    propsys.PROPVARIANTType("Task Master"))
+        if ico.exists():
+            ps.SetValue(pscon.PKEY_AppUserModel_RelaunchIconResource,
+                        propsys.PROPVARIANTType(f"{ico},0"))
+        pyw = Path(sys.executable).with_name("pythonw.exe")
+        exe = pyw if pyw.exists() else Path(sys.executable)
+        main_py = ASSETS_DIR.parent.parent / "main.py"
+        ps.SetValue(pscon.PKEY_AppUserModel_RelaunchCommand,
+                    propsys.PROPVARIANTType(f'"{exe}" "{main_py}"'))
+        ps.Commit()
+        return True
+    except Exception:
+        return False  # kosmetika – nikdy neblokovat start

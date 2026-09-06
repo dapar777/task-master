@@ -117,8 +117,11 @@ python main.py
 ```
 
 Na Windows bez konzolového okna: dvojklik na **`run.vbs`** (úplně bez konzole) nebo `run.bat`
-(spouští `pythonw`). Aplikace má vlastní moderní ikonu (zaškrtnutý checkbox) v `assets/`
-a v hlavním panelu se zobrazuje místo ikony Pythonu.
+(spouští `pythonw`). Ikona aplikace je ze sady [Terakota](../terakota-icons)
+(`assets/icons/task-master-*.ico`, terakotový disk bez pozadí; varianta podle tématu).
+V hlavním panelu se zobrazuje místo ikony Pythonu: Python z Microsoft Store je MSIX balíček
+a panel by jinak ukazoval logo balíčku, proto okno po zobrazení nastaví AppUserModel
+vlastnosti přímo na své HWND (pywin32 `propsys`, viz `app/appicon.py`).
 
 Při prvním spuštění se vytvoří složka `workspace/` s ukázkovým úkolem.
 Jiný pracovní prostor zvolíš přes menu **Soubor → Otevřít prostor…** (`Ctrl+O`).
@@ -270,7 +273,7 @@ app/
   shortcutdialog.py     dialog pro konfiguraci zkratek
   savedfilters.py       SavedFilter + FilterStore (presety v JSON)
   savedfiltersdialog.py dialog pro správu uložených filtrů
-  appicon.py            kreslená moderní ikona aplikace (zaškrtnutý checkbox)
+  appicon.py            ikona aplikace ze sady Terakota (assets/icons) + identita v hlavním panelu (pywin32)
   mainwindow.py         MainWindow – menu, kontextové menu, navigace, propojení
 tests/                  headless testy chování stromu a karet (viz níže)
 run.vbs / run.bat       spuštění na Windows bez konzolového okna
