@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSettings, QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QSettings, QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from . import appicon, icons, theme
 from .activitylog import ActivityLogger
 from .cardview import CardView
-from .commandpalette import CommandPalette
+from .commandpalette import RECENT_MAX, CommandPalette
 from .constants import (
     APP_NAME,
     DEFAULT_PRIORITY,
@@ -759,26 +759,334 @@ class MainWindow(QMainWindow):
     def _open_shortcuts(self) -> None:
         ShortcutDialog(self.shortcuts, self).exec()
 
+    # ------------------------------------------------------------------
+    # Příkazová paleta = registr všech uživatelských funkcí (viz CLAUDE.md)
+    # ------------------------------------------------------------------
+    def _palette_recent(self) -> list[str]:
+        raw = self.settings.value("palette_recent", [])
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(x) for x in (raw or [])]
+
     def _open_command_palette(self) -> None:
-        entries = []
+        recent = self._palette_recent()
+
+        def on_run(path: str) -> None:
+            lst = [path] + [p for p in recent if p != path]
+            self.settings.setValue("palette_recent", lst[: RECENT_MAX * 2])
+
+        CommandPalette(
+            self._build_palette_commands(), self, recent=recent, on_run=on_run,
+            extra_search=lambda q: self._palette_task_entries(q, limit=12),
+            mode_search=lambda mode, q: self._palette_task_entries(q, limit=200),
+        ).exec()
+
+    def _build_palette_commands(self) -> list[dict]:
+        """Strom příkazů palety. Každá uživatelská funkce má být tady –
+        buď explicitně (víceúrovňové položky, aktuální stav přes ``checked``),
+        nebo aspoň přes akci v ``self.act`` (doplní se automaticky na konci).
+        Popisky jsou klíčem pro „naposledy použité" – přejmenování je zahodí.
+        """
+        def e(category, label, run=None, shortcut="", children=None, icon=None,
+              checked=False, search=None, status=None, keep_open=False,
+              icon_color=None, tooltip="") -> dict:
+            d = {"category": category, "label": label, "run": run, "shortcut": shortcut}
+            if children is not None:
+                d["children"] = children
+            if search is not None:
+                d["search"] = search
+                d["status"] = status
+            if icon:
+                d["icon"] = icon
+            if icon_color:
+                d["icon_color"] = icon_color
+            if checked:
+                d["checked"] = True
+            if keep_open:
+                d["keep_open"] = True
+            if tooltip:
+                d["tooltip"] = tooltip
+            return d
+
+        covered: set[str] = set()
+
+        def a(cid: str, icon: str | None = None, label: str | None = None,
+              category: str | None = None) -> dict:
+            """Položka z existující akce (popisek, kategorie a zkratka ze ShortcutManageru)."""
+            act = self.act[cid]
+            covered.add(cid)
+            return e(category or self.shortcuts.category(cid), label or self.shortcuts.label(cid),
+                     act.trigger, self.shortcuts.current(cid), icon=icon or self.MENU_ICONS.get(cid),
+                     checked=act.isCheckable() and act.isChecked())
+
+        def sc(cid: str) -> str:
+            return self.shortcuts.current(cid) if cid in COMMAND_DEFS else ""
+
+        node = self._current_node
+        ws = self.workspace
+        fp = self.filter_panel
+        cur_status = node.meta.get("_status") if node is not None else None
+        try:
+            cur_prio = int(node.meta.get("_priority", 5)) if node is not None else None
+        except (TypeError, ValueError):
+            cur_prio = None
+
+        # --- stav / priorita / odklad aktuálního úkolu (resp. výběru)
+        def status_children() -> list[dict]:
+            return [e("Stav", STATUSES[k], lambda k=k: self._set_status_current(k), sc(f"task.status_{k}"),
+                      icon="dot", icon_color=theme.status_style(k)[2], checked=(k == cur_status))
+                    for k in STATUSES]
+
+        def priority_children() -> list[dict]:
+            return [e("Priorita", f"P{p}", lambda p=p: self._set_priority_value(p),
+                      icon="dot", icon_color=theme.priority_hex(p), checked=(p == cur_prio))
+                    for p in range(10, 0, -1)]
+
+        def snooze_children() -> list[dict]:
+            items = [e("Odklad", lbl, lambda s=s: self._snooze_current(s), icon="clock")
+                     for lbl, s in self.SNOOZE_PRESETS]
+            items.append(e("Odklad", "Vlastní interval…", lambda: self._set_status_current("snoozed"),
+                           sc("task.status_snoozed"), icon="edit"))
+            return items
+
+        # --- zobrazení / řazení
+        def view_children() -> list[dict]:
+            return [e("Zobrazení", lbl, lambda m=m: self._set_view_mode(m), sc(cid), icon=ic,
+                      checked=(self._view_mode == m))
+                    for m, lbl, cid, ic in (("tree", "Strom", "view.tree", "tree"),
+                                            ("list", "Seznam", "view.list", "list"),
+                                            ("cards", "Bez rušení (karty)", "view.cards", "cards"))]
+
+        def sort_children() -> list[dict]:
+            cur_key, cur_desc = fp.current_sort()
+
+            def orders(key: str) -> list[dict]:
+                return [e("Řazení", "Vzestupně", lambda k=key: self._palette_set_sort(k, False),
+                          checked=(key == cur_key and not cur_desc)),
+                        e("Řazení", "Sestupně", lambda k=key: self._palette_set_sort(k, True),
+                          checked=(key == cur_key and cur_desc))]
+            return [e("Řazení", lbl, children=(lambda k=key: orders(k)), checked=(key == cur_key))
+                    for key, lbl in SORT_OPTIONS.items()]
+
+        # --- filtr (přepínání kritérií nechá paletu otevřenou, zaškrtnutí = v filtru)
+        def filter_status_children() -> list[dict]:
+            cur = set(fp.current_filters()["statuses"])
+            return [e("Filtr", STATUSES[k], lambda k=k: self._palette_toggle_filter_list("statuses", k),
+                      icon="dot", icon_color=theme.status_style(k)[2], checked=(k in cur), keep_open=True)
+                    for k in STATUSES]
+
+        def filter_values_children(key: str, meta_key: str, prefix: str = "") -> list[dict]:
+            cur = set(fp.current_filters()[key])
+            values: set[str] = set()
+            for n in (ws.all_nodes() if ws else ()):
+                v = n.meta.get(meta_key)
+                if isinstance(v, list):
+                    values.update(str(x) for x in v if x)
+                elif v:
+                    values.add(str(v))
+            if not values:
+                return [e("Filtr", "(nic k výběru)")]
+            return [e("Filtr", prefix + v, lambda v=v, k=key: self._palette_toggle_filter_list(k, v),
+                      checked=(v in cur), keep_open=True) for v in sorted(values, key=str.lower)]
+
+        def flag_children() -> list[dict]:
+            cur = fp.current_filters()["flag"]
+            return [e("Filtr", lbl, lambda v=v: self._palette_set_filter(flag=v),
+                      icon=("flag" if v else None), checked=(cur == v))
+                    for lbl, v in (("Vše", None), ("Jen s vlaječkou", True), ("Bez vlaječky", False))]
+
+        def prio_range_children(which: str) -> list[dict]:
+            cur = fp.current_filters()[which]
+            return [e("Filtr", f"P{p}", lambda p=p, w=which: self._palette_set_filter(**{w: p}),
+                      checked=(p == cur)) for p in range(1, 11)]
+
+        def saved_filter_children() -> list[dict]:
+            cur = fp.saved_combo.currentData()
+            items = [e("Filtr", sf.name, lambda fid=sf.id: self._apply_saved_filter_by_id(fid),
+                       sf.shortcut or "", icon="bookmark", checked=(cur == sf.id))
+                     for sf in self.filter_store.filters]
+            return items or [e("Filtr", "(žádné uložené filtry – Ctrl+Shift+S uloží aktuální)")]
+
+        # --- navigace po úkolech
+        def subtask_children() -> list[dict]:
+            if node is None or not node.children:
+                return [e("Úkol", "(aktuální úkol nemá podúkoly)")]
+            return [self._palette_task_entry(c, "Podúkol") for c in node.children]
+
+        def ref_children() -> list[dict]:
+            if node is None or ws is None:
+                return [e("Úkol", "(není vybraný úkol)")]
+            targets = [ws.node_by_id(r) for r in node.refs]
+            targets = [t for t in targets if t is not None]
+            return ([self._palette_task_entry(t, "Související") for t in targets]
+                    or [e("Úkol", "(aktuální úkol nemá odkazy na úkoly)")])
+
+        def link_children() -> list[dict]:
+            links = node.links if node is not None else []
+            return ([e("Soubor", lk.get("name") or str(lk.get("path")),
+                       lambda p=lk.get("path"): QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))),
+                       icon="file", tooltip=str(lk.get("path", "")))
+                     for lk in links]
+                    or [e("Soubor", "(aktuální úkol nemá odkazy na soubory)")])
+
+        def open_folder(path) -> None:
+            if path:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+        def copy(text: str) -> None:
+            QApplication.clipboard().setText(text or "")
+            self.status.showMessage("Zkopírováno do schránky", 1500)
+
+        # --- vzhled
+        def theme_children() -> list[dict]:
+            dark = theme.is_dark()
+            return [e("Téma", "Světlé", lambda: self.act["view.dark_theme"].setChecked(False), icon="sun", checked=not dark),
+                    e("Téma", "Tmavé", lambda: self.act["view.dark_theme"].setChecked(True), icon="moon", checked=dark)]
+
+        def zoom_children() -> list[dict]:
+            return [e("Zoom", f"{z} %", lambda z=z: self._apply_zoom(z / 100),
+                      checked=abs(theme.zoom() - z / 100) < 1e-6)
+                    for z in (70, 80, 90, 100, 110, 125, 150, 175, 200)]
+
+        parent = node.parent if node is not None else None
+        entries = [
+            # úkol
+            a("task.new"), a("task.new_sub"), a("task.rename"), a("task.delete"),
+            a("task.toggle_done"), a("task.flag"),
+            e("Úkol", "Stav", children=status_children, icon="dot",
+              icon_color=(theme.status_style(cur_status)[2] if cur_status else None)),
+            e("Úkol", "Priorita", children=priority_children, icon="hash"),
+            e("Úkol", "Odložit o", children=snooze_children, icon="clock"),
+            a("task.priority_up"), a("task.priority_down"),
+            a("task.move_up"), a("task.move_down"),
+            a("task.copy"), a("task.cut"), a("task.paste"), a("task.paste_text"),
+            a("task.block_siblings"), a("task.make_sequence"), a("edit.undo"),
+            e("Úkol", "Kopírovat název úkolu", lambda: copy(node.title if node else ""), icon="copy"),
+            e("Úkol", "Kopírovat cestu k úkolu", lambda: copy(str(node.path) if node else ""), icon="clipboard"),
+            e("Úkol", "Otevřít složku úkolu v Průzkumníku", lambda: open_folder(node.path if node else None), icon="folder"),
+            # navigace
+            e("Navigace", "Přejít na úkol", search=lambda q: self._palette_task_entries(q, limit=60), icon="search",
+              status=lambda: f"{sum(1 for _ in ws.all_nodes())} úkolů" if ws else ""),
+            e("Navigace", "Podúkoly aktuálního úkolu", children=subtask_children, icon="subtasks"),
+            e("Navigace", "Nadřazený úkol", (lambda: self._navigate_to(parent)) if parent is not None else None,
+              icon="arrow_right", tooltip=(parent.title if parent is not None else "aktuální úkol je kořenový")),
+            e("Navigace", "Související úkoly (odkazy)", children=ref_children, icon="link"),
+            e("Navigace", "Soubory úkolu", children=link_children, icon="external"),
+            a("focus.filter"), a("focus.tree"), a("focus.editor"), a("focus.title"), a("focus.links"),
+            e("Navigace", "Rozbalit vše (strom)", self.tree.expandAll, icon="tree"),
+            e("Navigace", "Sbalit vše (strom)", self.tree.collapseAll, icon="tree"),
+            # zobrazení
+            e("Zobrazení", "Zobrazení", children=view_children, icon="cards"),
+            a("view.cycle"), a("view.compact_cards"),
+            e("Zobrazení", "Řadit podle", children=sort_children, icon="list"),
+            e("Zobrazení", "Téma", children=theme_children, icon=("sun" if theme.is_dark() else "moon")),
+            a("view.dark_theme"),
+            e("Zobrazení", "Zoom", children=zoom_children, icon="zoom_in"),
+            a("view.zoom_in"), a("view.zoom_out"), a("view.zoom_reset"),
+            # filtr
+            e("Filtr", "Filtr: stav", children=filter_status_children, icon="dot"),
+            e("Filtr", "Filtr: kategorie", children=lambda: filter_values_children("categories", "_category"), icon="folder"),
+            e("Filtr", "Filtr: tag", children=lambda: filter_values_children("tags", "_tags", "#"), icon="hash"),
+            e("Filtr", "Filtr: vlaječka", children=flag_children, icon="flag_outline"),
+            e("Filtr", "Filtr: priorita od", children=lambda: prio_range_children("priority_min")),
+            e("Filtr", "Filtr: priorita do", children=lambda: prio_range_children("priority_max")),
+            e("Filtr", "Uložené filtry", children=saved_filter_children, icon="bookmark"),
+            e("Filtr", "Zrušit filtr", fp.reset, icon="close"),
+            a("filter.save"), a("filter.manage"),
+            # prostor / aplikace
+            a("app.open_workspace"),
+            e("Prostor", "Otevřít složku prostoru v Průzkumníku", lambda: open_folder(ws.root if ws else None), icon="folder"),
+            e("Prostor", "Kopírovat cestu k prostoru", lambda: copy(str(ws.root) if ws else ""), icon="clipboard"),
+            a("app.save"), a("app.refresh"), a("app.stats"), a("app.shortcuts"),
+            e("Aplikace", "Konec", self.close),
+        ]
+        # stavy mají vlastní podúroveň; zbylé akce (editor apod.) doplň automaticky,
+        # aby žádný příkaz z menu v paletě nechyběl
+        covered.update(cid for cid in self.act if cid.startswith("task.status_"))
         for cid, act in self.act.items():
-            if cid == "app.command_palette":
+            if cid in covered or cid == "app.command_palette":
                 continue
-            entries.append({
-                "label": self.shortcuts.label(cid) if cid in COMMAND_DEFS else act.text(),
-                "category": self.shortcuts.category(cid) if cid in COMMAND_DEFS else "",
-                "shortcut": act.shortcut().toString(),
-                "run": act.trigger,
-            })
-        for f in self.filter_store.filters:
-            entries.append({
-                "label": f.name,
-                "category": "Filtr",
-                "shortcut": f.shortcut,
-                "run": (lambda fid=f.id: self._apply_saved_filter_by_id(fid)),
-            })
-        entries.sort(key=lambda e: (e["category"].lower(), e["label"].lower()))
-        CommandPalette(entries, self).exec()
+            known = cid in COMMAND_DEFS
+            entries.append(e(self.shortcuts.category(cid) if known else "Editor",
+                             self.shortcuts.label(cid) if known else act.text(),
+                             act.trigger, act.shortcut().toString(), icon=self.MENU_ICONS.get(cid),
+                             checked=act.isCheckable() and act.isChecked()))
+        return entries
+
+    # předvolby odkladu v paletě: (popisek, sekundy)
+    SNOOZE_PRESETS = (
+        ("10 minut", 600), ("30 minut", 1800), ("1 hodina", 3600), ("2 hodiny", 7200),
+        ("4 hodiny", 14400), ("1 den", 86400), ("2 dny", 172800), ("Týden", 604800),
+    )
+
+    def _palette_task_entry(self, n, category: str) -> dict:
+        status = n.meta.get("_status", "")
+        icon = {"done": "check", "snoozed": "clock", "blocked": "ban", "in_progress": "arrow_right"}.get(status)
+        where = breadcrumb(n.parent) if n.parent is not None else ""
+        info = STATUSES.get(status, "") + (f"  ·  {where}" if where else "")
+        return {"category": category, "label": n.title, "shortcut": info, "icon": icon,
+                "tooltip": str(n.path), "run": (lambda n=n: self._navigate_to(n))}
+
+    def _palette_task_entries(self, q: str, limit: int = 40) -> list[dict]:
+        """Úkoly, jejichž cesta (drobečky) obsahuje všechna slova dotazu."""
+        if not self.workspace or not q.strip():
+            return []
+        toks = q.lower().split()
+        hits = [n for n in self.workspace.all_nodes()
+                if all(t in breadcrumb(n).lower() for t in toks)]
+        hits.sort(key=lambda n: (not n.title.lower().startswith(toks[0]), n.title.lower()))
+        return [self._palette_task_entry(n, "Úkol") for n in hits[:limit]]
+
+    def _palette_set_sort(self, key: str, desc: bool) -> None:
+        fp = self.filter_panel
+        prev = fp.current_sort()
+        if prev == (key, desc):
+            return
+        fp.set_sort(key, desc)
+        fp._set_saved_silent("")
+        self._on_sort_changed(prev[0], prev[1], key, desc)
+
+    def _palette_set_filter(self, **changes) -> None:
+        """Změní vybraná kritéria filtru (ostatní nechá) a překreslí pohled."""
+        fp = self.filter_panel
+        preset = fp.export_preset()
+        preset.update(changes)
+        if preset["priority_min"] > preset["priority_max"]:
+            if "priority_min" in changes:
+                preset["priority_max"] = preset["priority_min"]
+            else:
+                preset["priority_min"] = preset["priority_max"]
+        fp.apply_preset(preset)
+        fp._set_saved_silent("")
+        fp.filtersChanged.emit()
+
+    def _palette_toggle_filter_list(self, key: str, value) -> None:
+        cur = list(self.filter_panel.current_filters()[key])
+        if value in cur:
+            cur.remove(value)
+        else:
+            cur.append(value)
+        self._palette_set_filter(**{key: cur})
+
+    def _snooze_current(self, secs: int) -> None:
+        """Odklad aktuálního úkolu (resp. výběru) o pevný interval – bez dialogu."""
+        node = self._current_node
+        if node is None:
+            self.status.showMessage("Není vybraný úkol", 1500)
+            return
+        sel = self._selected_nodes()
+        nodes = sel if (len(sel) > 1 and node in sel) else [node]
+        self._set_last_snooze(secs)
+        self.undo.push_fields([(n.task_id, n.meta) for n in nodes])
+        for n in nodes:
+            n.set_snooze(secs)
+        if self.detail.node in nodes:
+            self.detail.sync_status("snoozed")
+        self.status.showMessage(
+            f"Odloženo o {format_duration(secs)}"
+            + (f" – {len(nodes)} úkolů" if len(nodes) > 1 else ""), 4000
+        )
+        QTimer.singleShot(0, lambda: self._after_status_toggle(True))
 
     def _open_stats(self) -> None:
         if not self.workspace:
@@ -2401,6 +2709,14 @@ class MainWindow(QMainWindow):
         self._select_path_in_view(str(dnode.path))
 
     def _change_priority(self, delta: int) -> None:
+        self._set_priorities(lambda p: p + delta)
+
+    def _set_priority_value(self, value: int) -> None:
+        """Priorita výběru napevno (paleta)."""
+        self._set_priorities(lambda _p: int(value))
+
+    def _set_priorities(self, fn) -> None:
+        """Nová priorita = fn(stará), oříznutá na 1–10; ukládá undo a překreslí."""
         nodes = self._selected_nodes()
         if not nodes:
             return
@@ -2410,7 +2726,7 @@ class MainWindow(QMainWindow):
                 p = int(n.meta.get("_priority", 5))
             except (TypeError, ValueError):
                 p = 5
-            new = max(1, min(10, p + delta))
+            new = max(1, min(10, fn(p)))
             if new != p:
                 changed.append((n, new))
         if not changed:

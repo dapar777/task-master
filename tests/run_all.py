@@ -29,6 +29,7 @@ TESTS = [
     ("test_order_unique.py", "pořadí nového úkolu je globálně jedinečné (bez přepisu stromu)"),
     ("test_theme.py", "téma: barvy jen v theme.py, karty a strom v obou tématech, přepínač"),
     ("test_zoom.py", "zoom UI: px/pt/QSS, zkratky, kolečko, nastavení; tlačítko tématu v hlavičce"),
+    ("test_palette.py", "příkazová paleta: úrovně, hluboké hledání, naposledy použité, úkoly, úplnost"),
 ]
 
 

@@ -73,6 +73,22 @@ změnit zvenčí (otevření prostoru, F5, undo ze zálohy).
   `_snooze_timer` tiká každou sekundu a přebuduje pohled jen když nějaký
   odklad doběhl.
 
+**Příkazová paleta = registr všech funkcí.** `MainWindow._build_palette_commands`
+je **první místo**, kam patří každá nová uživatelská funkce (kategorie, popisek,
+zkratka, `run`); menu a zkratky jsou jen podmnožiny. Nová funkce bez záznamu
+v paletě = nedokončená; `tests/test_palette.py` hlídá, že každá akce z `self.act`
+má položku. Položka s `children` (seznam nebo callable, staví se líně) otevře
+další úroveň (Stav, Priorita, Odložit o, Řadit podle › pole › směr, Zobrazení,
+Téma, Zoom, Filtr: …, Uložené filtry, Podúkoly, Související úkoly, Soubory
+úkolu); `checked=True` označí aktuální stav; `keep_open=True` nechá paletu
+otevřenou a přestaví úroveň (přepínání kritérií filtru – stav čti v callable
+`children`, ne v uzávěru, jinak zaškrtnutí zastará); `search=callable(dotaz)`
+je vyhledávací úroveň (Přejít na úkol), `extra_search`/`mode_search` dodávají
+úkoly na kořen (3+ znaky, prefix `u `). Naposledy použité se ukládají do
+QSettings `palette_recent` jako cesty popisků oddělené `|` – **přejmenování
+popisku** starý záznam tiše zahodí, popisky na kořeni musí být jedinečné.
+Hledání na kořeni prochází i listy podúrovní (`_deep_entries`, hloubka 3).
+
 **`app/undo.py`** – hybridní undo: levné záznamy (`fields`, `created`, `moved`,
 `deleted`) místo kopie workspace; `snapshot` je jen fallback. Před operací,
 která mění metadata více uzlů, ulož je přes `undo.push_fields(...)`.

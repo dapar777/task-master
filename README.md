@@ -7,7 +7,15 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 🌳 **Hierarchické úkoly** – podúkoly se ukládají jako podsložky.
 - 📝 **WYSIWYG markdown editor** – tučné, kurzíva, nadpisy, seznamy, citace, kód, odkazy; přepínání na zdrojový markdown.
 - 🗂 **Ukládání na disk** ve formátu složek (viz níže), metadata v YAML.
-- ⌨️ **Příkazová paleta** (`Ctrl+Shift+P`) – vyhledávání a spouštění všech příkazů i uložených filtrů.
+- ⌨️ **Příkazová paleta** (`Ctrl+Shift+P`) ve stylu VS Code – **registr všech funkcí**:
+  každý příkaz z menu, víceúrovňové položky (*Stav ›*, *Priorita ›*, *Odložit o ›*,
+  *Řadit podle › Název › Sestupně*, *Zobrazení ›*, *Téma ›*, *Zoom ›*, *Filtr: stav /
+  kategorie / tag / vlaječka / priorita ›*, *Uložené filtry ›*, *Podúkoly ›*, *Související
+  úkoly ›*, *Soubory úkolu ›*), aktuální stav zaškrtnutý. Hledání na kořeni prohledává
+  i listy podúrovní („sestupně" najde všechna řazení), **naposledy použité** příkazy jsou
+  nahoře, `Backspace`/`Esc` vrací o úroveň výš. **Přejít na úkol** hledá v celém stromu
+  podle názvu i cesty; od 3 znaků se úkoly nabízejí rovnou na kořeni, prefix `u ` hledá jen
+  úkoly, prefix mezera jen příkazy. Přepínání kritérií filtru nechá paletu otevřenou.
 - ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
 - 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
 - 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
@@ -148,6 +156,8 @@ přes **klávesové zkratky** a v **příkazové paletě** (`Ctrl+Shift+P`). Ž�
 | Odkaz na jiný úkol | panel *Úkoly 🔗* → *Přidat…*; *Přejít* / dvojklik přejde na cíl |
 | Přesunout úkol pod jiný | přetáhni úkol **na** cílový úkol (vnoření) |
 | Změnit pořadí | přetáhni úkol **mezi** dva úkoly, nebo `Ctrl+W`/`Ctrl+Q` |
+| Cokoli z palety | `Ctrl+Shift+P`, napiš část názvu (i podpříkazu), `Enter`; `Backspace` zpět o úroveň |
+| Skočit na úkol | `Ctrl+Shift+P` a napiš 3+ znaky názvu, nebo `u název`, nebo položka *Přejít na úkol* |
 | Zobrazení strom/seznam/karty | `Ctrl+L` (cyklit) nebo menu *Zobrazení* |
 | Úsporné karty (Bez rušení) | `Ctrl+Shift+E` nebo menu *Zobrazení* (nižší karty mimo Probíhá/Ke zpracování) |
 | Světlé / tmavé téma | ikona měsíce/slunce v hlavičce nebo menu *Zobrazení* |
@@ -282,7 +292,7 @@ app/
   undo.py               UndoManager – hybridní undo (levné metadatové/created záznamy + snapshot)
   activitylog.py        ActivityLogger – log aktivního úkolu do _activity.log (formát: ACTIVITY_LOG_FORMAT.md)
   stats.py              Statistiky – výpočet + dialog se sloupcovými grafy (F8)
-  commandpalette.py     CommandPalette – příkazová paleta (Ctrl+Shift+P)
+  commandpalette.py     CommandPalette – víceúrovňová příkazová paleta (Ctrl+Shift+P); strom příkazů staví MainWindow._build_palette_commands
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
   shortcutdialog.py     dialog pro konfiguraci zkratek
   savedfilters.py       SavedFilter + FilterStore (presety v JSON)
@@ -332,3 +342,4 @@ výběr a pohled**:
 | `test_order_unique.py` | pořadí nového úkolu je **globálně** jedinečné (i vůči skrytým); `normalize_orders()` nepřepisuje strom |
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
 | `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |
+| `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
