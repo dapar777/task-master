@@ -56,6 +56,8 @@ _PATHS: dict[str, tuple[str, bool]] = {
     "chart": ('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', False),
     "keyboard": ('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>', False),
     "save": ('<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>', False),
+    "zoom_in": ('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v6M8 11h6"/>', False),
+    "zoom_out": ('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M8 11h6"/>', False),
     "sliders": ('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', False),
 }
 

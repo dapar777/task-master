@@ -129,11 +129,11 @@ class _ChipDelegate(QStyledItemDelegate):
     s tématem. Sloupec 0 (název + checkbox) nechává na výchozím delegátu.
     """
 
-    ROW_H = 30
+    ROW_H = 30  # px bez zoomu
 
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)
-        return QSize(s.width(), max(s.height(), self.ROW_H))
+        return QSize(s.width(), max(s.height(), theme.px(self.ROW_H)))
 
     def paint(self, painter, option, index):
         col = index.column()
@@ -170,31 +170,34 @@ class _ChipDelegate(QStyledItemDelegate):
             font = theme.mono_font(8.5)
             font.setBold(True)
         fm = QFontMetrics(font)
-        pad, h = 7, 20
-        w = fm.horizontalAdvance(text) + 2 * pad + (14 if (dot or icon_name) else 0)
+        px = theme.px
+        pad, h = px(7), px(20)
+        w = fm.horizontalAdvance(text) + 2 * pad + (px(14) if (dot or icon_name) else 0)
         r = opt.rect
-        w = min(w, r.width() - 8)
+        w = min(w, r.width() - px(8))
         if w <= 0:
             return
-        x, y = r.x() + 4, r.y() + (r.height() - h) // 2
+        x, y = r.x() + px(4), r.y() + (r.height() - h) // 2
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(bg))
-        painter.drawRoundedRect(QRect(x, y, w, h), 6, 6)
+        painter.drawRoundedRect(QRect(x, y, w, h), px(6), px(6))
         tx = x + pad
         if dot:
+            d = px(6)
             painter.setBrush(QColor(dot))
-            painter.drawEllipse(tx, y + h // 2 - 3, 6, 6)
-            tx += 12
+            painter.drawEllipse(tx, y + h // 2 - d // 2, d, d)
+            tx += px(12)
         elif icon_name:
-            painter.drawPixmap(tx, y + (h - 12) // 2, icons.pixmap(icon_name, 12, fg))
-            tx += 16
+            isz = px(12)
+            painter.drawPixmap(tx, y + (h - isz) // 2, icons.pixmap(icon_name, isz, fg))
+            tx += px(16)
         painter.setFont(font)
         painter.setPen(QColor(fg))
         avail = x + w - pad - tx
         # v úzkém sloupci nech jen tečku/ikonu – zkrácený text by nic neřekl
-        if avail >= 14:
+        if avail >= px(14):
             painter.drawText(
                 QRect(tx, y, avail, h),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
@@ -219,10 +222,10 @@ class TaskTreeWidget(QTreeWidget):
         self.resolver = None  # id -> TaskNode (nastaví hlavní okno)
         self.setColumnCount(3)
         self.setHeaderLabels(["Úkol", "Stav", "Priorita"])
-        self.setColumnWidth(0, 300)
-        self.setColumnWidth(1, 150)
+        self.setColumnWidth(0, theme.px(300))
+        self.setColumnWidth(1, theme.px(150))
         self.setAlternatingRowColors(False)
-        self.setIndentation(18)
+        self.setIndentation(theme.px(18))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setUniformRowHeights(True)
         self.setItemDelegate(_ChipDelegate(self))
@@ -231,7 +234,7 @@ class TaskTreeWidget(QTreeWidget):
         hdr.setSectionResizeMode(0, hdr.ResizeMode.Stretch)
         hdr.setSectionResizeMode(1, hdr.ResizeMode.Fixed)
         hdr.setSectionResizeMode(2, hdr.ResizeMode.Fixed)
-        self.setColumnWidth(2, 60)
+        self.setColumnWidth(2, theme.px(60))
 
         # Drag & drop
         self.setAcceptDrops(True)
@@ -248,7 +251,7 @@ class TaskTreeWidget(QTreeWidget):
         self.itemChanged.connect(self._on_item_changed)
         self.itemDelegate().closeEditor.connect(self._finish_edit)
 
-    STATUS_COL_W = 150   # plná šířka sloupce Stav
+    STATUS_COL_W = 150   # plná šířka sloupce Stav (px bez zoomu)
     PRIORITY_COL_W = 60
     MIN_TASK_COL_W = 200  # sloupec Úkol se ošidí až jako poslední
 
@@ -256,13 +259,20 @@ class TaskTreeWidget(QTreeWidget):
         super().resizeEvent(event)
         self._fit_columns()
 
+    def retheme(self) -> None:
+        """Po zoomu: odsazení, šířky sloupců a výšky řádků (delegát je má od zoomu)."""
+        self.setIndentation(theme.px(18))
+        self._fit_columns()
+        self.doItemsLayout()
+
     def _fit_columns(self) -> None:
         """Úzký strom: nejdřív se zužuje Stav (chip skončí jen s tečkou), pak Priorita."""
+        px = theme.px
         w = self.viewport().width()
-        prio = self.PRIORITY_COL_W if w >= 380 else 40
-        status = self.STATUS_COL_W
-        if w - status - prio < self.MIN_TASK_COL_W:
-            status = max(34, w - prio - self.MIN_TASK_COL_W)
+        prio = px(self.PRIORITY_COL_W) if w >= px(380) else px(40)
+        status = px(self.STATUS_COL_W)
+        if w - status - prio < px(self.MIN_TASK_COL_W):
+            status = max(px(34), w - prio - px(self.MIN_TASK_COL_W))
         if self.columnWidth(1) != status:
             self.setColumnWidth(1, status)
         if self.columnWidth(2) != prio:

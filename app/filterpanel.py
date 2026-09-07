@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .constants import PRIORITIES, SORT_OPTIONS, STATUSES
+from . import theme
 from .widgets import SectionLabel
 
 DATA_ROLE = Qt.ItemDataRole.UserRole
@@ -177,7 +178,7 @@ class FilterPanel(QWidget):
 
         self.criteria = QWidget()
         crit_layout = QVBoxLayout(self.criteria)
-        crit_layout.setContentsMargins(0, 4, 0, 0)
+        self._crit_layout = crit_layout
         crit_layout.addLayout(form)
         reset_row = QHBoxLayout()
         reset_row.addStretch(1)
@@ -194,10 +195,11 @@ class FilterPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        self._layout = layout
         layout.addLayout(head)
         layout.addWidget(self.saved_combo)
         layout.addWidget(self.criteria)
+        self.retheme()
 
         # signály kritérií
         self.name_edit.textChanged.connect(self._criteria_changed)
@@ -217,6 +219,11 @@ class FilterPanel(QWidget):
         self.saved_combo.currentIndexChanged.connect(self._on_saved_selected)
 
     # ------------------------------------------------------------------
+    def retheme(self) -> None:
+        """Mezery panelu podle zoomu."""
+        self._crit_layout.setContentsMargins(0, theme.px(4), 0, 0)
+        self._layout.setSpacing(theme.px(6))
+
     def _toggle_criteria(self, on: bool) -> None:
         self.criteria.setVisible(on)
         self.expand_btn.setText("Kritéria ▾" if on else "Kritéria ▸")

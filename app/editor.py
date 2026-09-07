@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QTextCharFormat,
     QTextCursor,
+    QTextFormat,
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
@@ -27,7 +28,8 @@ from PySide6.QtWidgets import (
 
 from . import theme
 
-_HEADING_SCALE = {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.15, 5: 1.05, 6: 1.0}
+# nadpis -> FontSizeAdjustment (stupně relativní velikosti Qt: 3 = 2×, 2 = 1.5×, 1 = 1.2×)
+_HEADING_ADJUST = {1: 3, 2: 2, 3: 1, 4: 0, 5: 0, 6: 0}
 
 
 class _BodyTextEdit(QTextEdit):
@@ -63,8 +65,7 @@ class MarkdownEditor(QWidget):
 
         self.edit = _BodyTextEdit(self)
         self.edit.setAcceptRichText(True)
-        doc_font = QFont("Segoe UI", self._base_point)
-        self.edit.document().setDefaultFont(doc_font)
+        self.edit.document().setDefaultFont(self._doc_font())
         self.edit.setTabChangesFocus(False)
         self.edit.textChanged.connect(self.contentChanged)
 
@@ -76,6 +77,18 @@ class MarkdownEditor(QWidget):
         layout.setSpacing(0)
         layout.addWidget(self.toolbar)
         layout.addWidget(self.edit, 1)
+
+    def _doc_font(self) -> QFont:
+        """Základní písmo těla; velikost jde přes zoom tématu."""
+        f = QFont("Segoe UI")
+        f.setPointSizeF(theme.pt(self._base_point))
+        return f
+
+    def retheme(self) -> None:
+        """Po zoomu: nové základní písmo dokumentu. Nadpisy mají velikost
+        relativní (FontSizeAdjustment jako import markdownu), takže se
+        přeškálují s ním."""
+        self.edit.document().setDefaultFont(self._doc_font())
 
     # ------------------------------------------------------------------
     # Toolbar
@@ -202,12 +215,11 @@ class MarkdownEditor(QWidget):
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
         char_fmt = QTextCharFormat()
-        if level == 0:
-            char_fmt.setFontWeight(QFont.Weight.Normal)
-            char_fmt.setFontPointSize(self._base_point)
-        else:
-            char_fmt.setFontWeight(QFont.Weight.Bold)
-            char_fmt.setFontPointSize(self._base_point * _HEADING_SCALE.get(level, 1.0))
+        # velikost relativní k základnímu písmu (stejně jako setMarkdown), ať
+        # nadpis přežije zoom; absolutní body by po zoomu zůstaly staré
+        char_fmt.setFontWeight(QFont.Weight.Normal if level == 0 else QFont.Weight.Bold)
+        char_fmt.setProperty(QTextFormat.Property.FontSizeAdjustment,
+                             _HEADING_ADJUST.get(level, 0))
         cursor.mergeCharFormat(char_fmt)
         cursor.endEditBlock()
 
@@ -257,7 +269,7 @@ class MarkdownEditor(QWidget):
             md = self.edit.toPlainText()
             self.edit.blockSignals(True)
             self.edit.setAcceptRichText(True)
-            self.edit.document().setDefaultFont(QFont("Segoe UI", self._base_point))
+            self.edit.document().setDefaultFont(self._doc_font())
             self.edit.setMarkdown(md)
             self.edit.blockSignals(False)
         self._source_mode = on
@@ -272,7 +284,7 @@ class MarkdownEditor(QWidget):
             self.source_action.setChecked(False)  # vrátí do WYSIWYG
         self.edit.blockSignals(True)
         self.edit.setAcceptRichText(True)
-        self.edit.document().setDefaultFont(QFont("Segoe UI", self._base_point))
+        self.edit.document().setDefaultFont(self._doc_font())
         self.edit.setMarkdown(text or "")
         self.edit.blockSignals(False)
 

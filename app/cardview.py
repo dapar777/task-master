@@ -30,7 +30,7 @@ from .taskdialog import format_duration
 from .tasktree import _chip_text, breadcrumb
 from .widgets import Badge, Chip, IconButton, PriorityPill, StatusChip, TitleLabel
 
-CARD_COLUMN_WIDTH = 860
+CARD_COLUMN_WIDTH = 860  # px bez zoomu
 
 
 def _incomplete_subtasks(node) -> int:
@@ -88,6 +88,7 @@ class CardWidget(QFrame):
         self.setSizePolicy(sp)
 
         t = theme.current()
+        px = theme.px
         status = node.meta.get("_status", "")
         done = status == "done"
         # levý pruh v barvě stavu (kreslí paintEvent); priorita = štítek vpravo
@@ -111,13 +112,13 @@ class CardWidget(QFrame):
         self.flag_label = None
         if self.flagged:
             self.flag_label = QLabel()
-            self.flag_label.setPixmap(icons.pixmap("flag", 14, t.accent))
+            self.flag_label.setPixmap(icons.pixmap("flag", px(14), t.accent))
             self.flag_label.setToolTip("Vlaječka")
 
         # pravý shluk: odznak podúkolů, odpočet + Obnovit, popis, priorita
         right = QHBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
-        right.setSpacing(6)
+        right.setSpacing(px(6))
         inc = _incomplete_subtasks(node)
         if inc:
             right.addWidget(Badge(f"↳ {inc}", tooltip=f"{inc} nedokončených podúkolů"))
@@ -134,17 +135,17 @@ class CardWidget(QFrame):
         self.has_body = bool(node.has_body)
         if self.has_body:
             doc = QLabel()
-            doc.setPixmap(icons.pixmap("doc", 14, t.muted))
+            doc.setPixmap(icons.pixmap("doc", px(14), t.muted))
             doc.setToolTip("Úkol má popis")
             right.addWidget(doc)
         right.addWidget(PriorityPill(node.meta.get("_priority", "?")))
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(10)
+        title_row.setSpacing(px(10))
         if self.flag_label is not None:
             title_row.addWidget(self.flag_label, 0, Qt.AlignmentFlag.AlignTop)
-            title_row.setSpacing(6)
+            title_row.setSpacing(px(6))
         title_row.addWidget(self.title, 1)
         if not narrow:
             title_row.addLayout(right, 0)
@@ -162,7 +163,7 @@ class CardWidget(QFrame):
 
         left = QVBoxLayout()
         left.setContentsMargins(0, 0, 0, 0)
-        left.setSpacing(2 if compact else 6)
+        left.setSpacing(px(2 if compact else 6))
         left.addLayout(title_row)
         left.addWidget(self.path)
         if narrow:
@@ -174,7 +175,7 @@ class CardWidget(QFrame):
         if not compact:
             props = QHBoxLayout()
             props.setContentsMargins(0, 0, 0, 0)
-            props.setSpacing(8)
+            props.setSpacing(px(8))
             icon = "ban" if (node.blocked_by or node.auto_blocked) else None
             chip = StatusChip(status, _chip_text(node), icon=icon)
             if blocker is not None:
@@ -206,11 +207,11 @@ class CardWidget(QFrame):
         row = QHBoxLayout(self)
         m = 8 if compact else 12
         if narrow:
-            row.setContentsMargins(12, m - 2, 8, m - 2)  # úzký sloupec: těsnější karta
-            row.setSpacing(8)
+            row.setContentsMargins(px(12), px(m - 2), px(8), px(m - 2))  # úzký sloupec: těsnější karta
+            row.setSpacing(px(8))
         else:
-            row.setContentsMargins(18, m, 14, m)
-            row.setSpacing(12)
+            row.setContentsMargins(px(18), px(m), px(14), px(m))
+            row.setSpacing(px(12))
         row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(left, 1)
 
@@ -224,7 +225,8 @@ class CardWidget(QFrame):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._stripe)
-        p.drawRoundedRect(QRectF(1.5, 9, 4, max(4, self.height() - 18)), 2, 2)
+        z = theme.zoom()
+        p.drawRoundedRect(QRectF(1.5 * z, 9 * z, 4 * z, max(4 * z, self.height() - 18 * z)), 2 * z, 2 * z)
         p.end()
 
     def enterEvent(self, event):
@@ -305,17 +307,14 @@ class CardView(QScrollArea):
         self.container = QWidget()
         self.container.setObjectName("cardsPage")
         outer = QHBoxLayout(self.container)
-        outer.setContentsMargins(24, 16, 24, 16)
         self._outer = outer
         # sloupec bere celou šířku až do maxima; rozpěrky (váha 0) vezmou jen
         # to, co zbyde nad maximem, takže sloupec stojí uprostřed
         outer.addStretch(0)
         self.column = QWidget()
-        self.column.setMaximumWidth(CARD_COLUMN_WIDTH)
         self.column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.vbox = QVBoxLayout(self.column)
         self.vbox.setContentsMargins(0, 0, 0, 0)
-        self.vbox.setSpacing(10)
         self.vbox.addStretch(1)
         outer.addWidget(self.column, 1)
         outer.addStretch(0)
@@ -333,17 +332,32 @@ class CardView(QScrollArea):
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._narrow = False          # úzký sloupec: pravý shluk karty pod název
         self._last_populate = None    # (nodes, compact_fn, group_fn) pro přestavbu po resize
+        self._apply_metrics()
 
-    NARROW_BELOW = 560  # px šířky výřezu
+    NARROW_BELOW = 560  # px šířky výřezu (bez zoomu)
+
+    def _apply_metrics(self) -> None:
+        """Okraje stránky, mezery a šířka sloupce podle zoomu a režimu šířky."""
+        px = theme.px
+        if self._narrow:
+            # úzké okno: menší okraje stránky i mezery, karty přes celou šířku
+            self._outer.setContentsMargins(px(6), px(8), px(6), px(8))
+            self.vbox.setSpacing(px(6))
+        else:
+            self._outer.setContentsMargins(px(24), px(16), px(24), px(16))
+            self.vbox.setSpacing(px(10))
+        self.column.setMaximumWidth(px(CARD_COLUMN_WIDTH))
+
+    def retheme(self) -> None:
+        """Po zoomu: rozměry stránky; karty přestaví hlavní okno (otisk má zoom)."""
+        self._apply_metrics()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        narrow = self.viewport().width() < self.NARROW_BELOW
+        narrow = self.viewport().width() < theme.px(self.NARROW_BELOW)
         if narrow != self._narrow:
             self._narrow = narrow
-            # úzké okno: menší okraje stránky i mezery, karty přes celou šířku
-            self._outer.setContentsMargins(*((6, 8, 6, 8) if narrow else (24, 16, 24, 16)))
-            self.vbox.setSpacing(6 if narrow else 10)
+            self._apply_metrics()
             if self._last_populate is not None:
                 # otisky karet obsahují režim šířky -> karty se přestaví
                 self.populate(*self._last_populate)
@@ -390,6 +404,7 @@ class CardView(QScrollArea):
             node.snooze_elapsed(),  # doběhnutí mění vzhled i zařazení
             len(node.links), len(node.refs), node.order,
             _incomplete_subtasks(node),
+            theme.zoom(),  # rozměry a písma karty jsou od zoomu odvozené
         )
 
     def _new_card(self, node, compact: bool) -> "CardWidget":

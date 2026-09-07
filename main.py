@@ -23,9 +23,10 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
-    # vzhled (Solarized světlé/tmavé) – jediný zdroj barev je app/theme.py
-    theme_name = QSettings(ORG_NAME, APP_NAME).value("theme", "light", type=str)
-    theme.apply(app, theme_name)
+    # vzhled (Solarized světlé/tmavé) a zoom UI – jediný zdroj barev je app/theme.py
+    settings = QSettings(ORG_NAME, APP_NAME)
+    theme_name = settings.value("theme", "light", type=str)
+    theme.apply(app, theme_name, zoom=settings.value("zoom", 1.0, type=float))
 
     # ikona ze sady Terakota (assets/icons), varianta podle tématu;
     # okno si ji při zobrazení a změně tématu prosadí i v hlavním panelu

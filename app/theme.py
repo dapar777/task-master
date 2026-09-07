@@ -3,12 +3,18 @@
 Jediné místo, kde se definují barvy, písma a QSS. Ostatní moduly se ptají
 funkcemi (status_style, priority_style, title_font…) a nikde nemají hex
 natvrdo. Přepnutí tématu = apply(app, "dark") a překreslení.
+
+Zoom: jeden faktor pro celé UI (zoom()/set_zoom()). Každá velikost v QSS
+prochází scaled(), písma přes pt() a rozměry v kódu přes px(); apply(app,
+name, zoom=1.3) tak přegeneruje stylesheet, ve kterém jsou písma, odsazení,
+výšky prvků i poloměry o 30 % větší. Hranice 1px (linky, rámečky) zůstávají.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import tempfile
 
 from PySide6.QtCore import QStandardPaths
@@ -108,6 +114,7 @@ DARK = Tokens(
 )
 
 THEMES = {"light": LIGHT, "dark": DARK}
+_style_set = False
 _current = LIGHT
 
 
@@ -153,10 +160,68 @@ def priority_style(p) -> tuple[str, str, str]:
 
 
 def chip_qss(fg: str, bg: str, radius: int = 6, padding: str = "1px 7px") -> str:
-    return (
+    return scaled(
         f"QLabel{{background:{bg}; color:{fg}; border-radius:{radius}px;"
         f" padding:{padding}; font-weight:600;}}"
     )
+
+
+# ----------------------------------------------------------------------------
+# Zoom – jeden faktor pro celé UI
+# ----------------------------------------------------------------------------
+ZOOM_MIN, ZOOM_MAX, ZOOM_STEP = 0.7, 2.0, 0.1
+_zoom = 1.0
+
+
+def zoom() -> float:
+    return _zoom
+
+
+def set_zoom(factor: float) -> float:
+    """Ořízne a uloží faktor zoomu. Potom zavolej apply()."""
+    global _zoom
+    try:
+        factor = float(factor)
+    except (TypeError, ValueError):
+        factor = 1.0
+    _zoom = max(ZOOM_MIN, min(ZOOM_MAX, round(factor, 2)))
+    return _zoom
+
+
+def px(n: float) -> int:
+    """Logické pixely přenásobené zoomem (pro nenulový vstup nikdy pod 1)."""
+    if not n:
+        return 0
+    v = int(round(abs(n) * _zoom))
+    v = max(1, v)
+    return -v if n < 0 else v
+
+
+def pt(n: float) -> float:
+    """Velikost písma v bodech přenásobená zoomem (jedno desetinné místo)."""
+    return round(n * _zoom, 1)
+
+
+_SIZE_RE = re.compile(r"(-?\d+(?:\.\d+)?)(px|pt)\b")
+
+
+def _scale_match(m: re.Match) -> str:
+    val, unit = float(m.group(1)), m.group(2)
+    if unit == "pt":
+        return f"{pt(val):g}pt"
+    if abs(val) == 1:
+        return m.group(0)  # 1px linky a rámečky se nezvětšují
+    return f"{px(val)}px"
+
+
+def scaled(qss: str) -> str:
+    """Přenásobí každou velikost v px/pt uvnitř QSS aktuálním zoomem.
+
+    Při zoomu 1.0 vrací text beze změny (žádné zaokrouhlování 1.5px apod.).
+    """
+    if abs(_zoom - 1.0) < 1e-6:
+        return qss
+    return _SIZE_RE.sub(_scale_match, qss)
 
 
 # ----------------------------------------------------------------------------
@@ -167,24 +232,25 @@ TITLE_FAMILIES = ["Cambria", "Georgia", "Noto Serif", "DejaVu Serif", "serif"]
 MONO_FAMILIES = ["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace"]
 
 
-def _font(families, pt: float, weight=QFont.Weight.Normal) -> QFont:
+def _font(families, size: float, weight=QFont.Weight.Normal) -> QFont:
     f = QFont()
     f.setFamilies(families)
-    f.setPointSizeF(pt)
+    f.setPointSizeF(pt(size))
     f.setWeight(weight)
     return f
 
 
-def ui_font(pt: float = 10, weight=QFont.Weight.Normal) -> QFont:
-    return _font(UI_FAMILIES, pt, weight)
+def ui_font(size: float = 10, weight=QFont.Weight.Normal) -> QFont:
+    """Písmo UI; velikost je v bodech bez zoomu (zoom se přičte tady)."""
+    return _font(UI_FAMILIES, size, weight)
 
 
-def title_font(pt: float = 14, weight=QFont.Weight.DemiBold) -> QFont:
-    return _font(TITLE_FAMILIES, pt, weight)
+def title_font(size: float = 14, weight=QFont.Weight.DemiBold) -> QFont:
+    return _font(TITLE_FAMILIES, size, weight)
 
 
-def mono_font(pt: float = 9) -> QFont:
-    return _font(MONO_FAMILIES, pt)
+def mono_font(size: float = 9) -> QFont:
+    return _font(MONO_FAMILIES, size)
 
 
 # ----------------------------------------------------------------------------
@@ -232,7 +298,7 @@ def build_qss(t: Tokens) -> str:
     chevron_right = _write_asset(f"chevron-right-{t.name}.svg", _CHEVRON_RIGHT_SVG.format(c=t.text2))
     sel_tint = mix(t.accent, t.paper, 0.10)
     green = t.status_dot["done"]
-    return f"""
+    return scaled(f"""
 QMainWindow, QDialog, QMessageBox, QInputDialog, QFileDialog {{ background: {t.canvas}; }}
 QWidget {{ color: {t.text}; }}
 QLabel {{ background: transparent; }}
@@ -374,7 +440,7 @@ QSlider::handle:horizontal:hover {{ background: {t.hover}; }}
 
 QDialogButtonBox QPushButton {{ min-width: 84px; }}
 QTabBar::tab {{ padding: 6px 12px; }}
-"""
+""")
 
 
 def palette(t: Tokens) -> QPalette:
@@ -406,11 +472,19 @@ def palette(t: Tokens) -> QPalette:
     return p
 
 
-def apply(app, name: str = "light") -> Tokens:
-    """Nastaví téma pro celou aplikaci (styl Fusion + paleta + QSS + písmo)."""
-    global _current
+def apply(app, name: str = "light", zoom: float | None = None) -> Tokens:
+    """Nastaví téma pro celou aplikaci (styl Fusion + paleta + QSS + písmo).
+
+    Volá se opakovaně (přepnutí tématu, zoom); styl se nastaví jen jednou,
+    paleta, písmo a stylesheet se přegenerují.
+    """
+    global _current, _style_set
     _current = THEMES.get(name, LIGHT)
-    app.setStyle("Fusion")
+    if zoom is not None:
+        set_zoom(zoom)
+    if not _style_set:
+        app.setStyle("Fusion")
+        _style_set = True
     app.setPalette(palette(_current))
     app.setFont(ui_font(10))
     app.setStyleSheet(build_qss(_current))

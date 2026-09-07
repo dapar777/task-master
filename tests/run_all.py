@@ -28,6 +28,7 @@ TESTS = [
     ("test_context_key.py", "klávesa kontextového menu ve všech zobrazeních"),
     ("test_order_unique.py", "pořadí nového úkolu je globálně jedinečné (bez přepisu stromu)"),
     ("test_theme.py", "téma: barvy jen v theme.py, karty a strom v obou tématech, přepínač"),
+    ("test_zoom.py", "zoom UI: px/pt/QSS, zkratky, kolečko, nastavení; tlačítko tématu v hlavičce"),
 ]
 
 

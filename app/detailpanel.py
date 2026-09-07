@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -73,7 +73,9 @@ class FlagButton(IconButton):
     def retheme(self) -> None:
         t = theme.current()
         on = self.isChecked()
-        self.setIcon(icons.icon("flag" if on else "flag_outline", 16, t.accent if on else t.muted))
+        sz = theme.px(16)
+        self.setIconSize(QSize(sz, sz))
+        self.setIcon(icons.icon("flag" if on else "flag_outline", sz, t.accent if on else t.muted))
 
 
 def _section(title: str, hint: str, buttons: list[IconButton]) -> tuple[QWidget, QVBoxLayout]:
@@ -83,10 +85,10 @@ def _section(title: str, hint: str, buttons: list[IconButton]) -> tuple[QWidget,
     # Úkoly) diktovaly minimální šířku celého okna
     box.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     v = QVBoxLayout(box)
-    v.setContentsMargins(12, 8, 12, 8)
-    v.setSpacing(4)
+    v.setContentsMargins(theme.px(12), theme.px(8), theme.px(12), theme.px(8))
+    v.setSpacing(theme.px(4))
     head = QHBoxLayout()
-    head.setSpacing(8)
+    head.setSpacing(theme.px(8))
     head.addWidget(SectionLabel(title))
     if hint:
         h = QLabel(hint)
@@ -124,7 +126,7 @@ class TaskDetailPanel(QWidget):
         self.title_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         title_row = QHBoxLayout()
-        title_row.setSpacing(10)
+        self._title_row = title_row
         title_row.addWidget(self.done_check, 0, Qt.AlignmentFlag.AlignTop)
         title_row.addWidget(self.title_label, 1)
 
@@ -142,21 +144,15 @@ class TaskDetailPanel(QWidget):
         self.tags_edit.setPlaceholderText("tagy oddělené čárkou")
         self.path_label = QLabel("—")
         self.path_label.setObjectName("faintLabel")
-        self.path_label.setFont(theme.mono_font(8))
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         # dlouhá cesta nesmí roztahovat panel
         self.path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        # umožni úzké okno – widgety se smí zmenšit
-        for _w in (self.status_combo, self.priority_combo, self.category_edit, self.tags_edit):
-            _w.setMinimumWidth(46)
         for _c, _n in ((self.status_combo, 9), (self.priority_combo, 3)):
             _c.setMinimumContentsLength(_n)
             _c.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.category_edit.setMaximumWidth(160)
-        self.tags_edit.setMaximumWidth(220)
 
         chips = QHBoxLayout()
-        chips.setSpacing(8)
+        self._chips_row = chips
         chips.addWidget(self.status_combo)
         chips.addWidget(self.priority_combo)
         chips.addWidget(self.flag_btn)
@@ -167,19 +163,16 @@ class TaskDetailPanel(QWidget):
 
         header = QWidget()
         hv = QVBoxLayout(header)
-        hv.setContentsMargins(16, 12, 16, 10)
-        hv.setSpacing(6)
+        self._header_layout = hv
         hv.addWidget(self.crumb_label)
         hv.addLayout(title_row)
         hv.addLayout(chips)
 
         # --- editor ---
         self.editor = MarkdownEditor()
-        self.editor.setMinimumWidth(160)
 
         # --- odkazy na soubory ---
         self.link_list = LinkList()
-        self.link_list.setMinimumWidth(80)
         self.link_list.itemDoubleClicked.connect(lambda _: self._open_link())
         self.link_list.filesDropped.connect(self._on_files_dropped)
         open_btn = IconButton("external", "Otevřít soubor")
@@ -194,7 +187,6 @@ class TaskDetailPanel(QWidget):
 
         # --- odkazy na jiné úkoly ---
         self.ref_list = QListWidget()
-        self.ref_list.setMinimumWidth(80)
         self.ref_list.itemDoubleClicked.connect(lambda _: self._goto_ref())
         add_ref_btn = IconButton("plus", "Přidat odkaz na úkol")
         add_ref_btn.clicked.connect(lambda: self.addRefRequested.emit())
@@ -225,6 +217,7 @@ class TaskDetailPanel(QWidget):
         layout.addWidget(header)
         layout.addWidget(HLine())
         layout.addWidget(splitter, 1)
+        self.retheme()
 
         # --- signály ---
         self.status_combo.currentIndexChanged.connect(self._on_status_combo_changed)
@@ -246,6 +239,24 @@ class TaskDetailPanel(QWidget):
     # ------------------------------------------------------------------
     # Načtení / uložení
     # ------------------------------------------------------------------
+    def retheme(self) -> None:
+        """Rozměry a písma držené mimo QSS – po zoomu se přepočítají."""
+        px = theme.px
+        self._title_row.setSpacing(px(10))
+        self._chips_row.setSpacing(px(8))
+        self._header_layout.setContentsMargins(px(16), px(12), px(16), px(10))
+        self._header_layout.setSpacing(px(6))
+        self.path_label.setFont(theme.mono_font(8))
+        # umožni úzké okno – widgety se smí zmenšit
+        for w in (self.status_combo, self.priority_combo, self.category_edit, self.tags_edit):
+            w.setMinimumWidth(px(46))
+        self.category_edit.setMaximumWidth(px(160))
+        self.tags_edit.setMaximumWidth(px(220))
+        self.editor.setMinimumWidth(px(160))
+        for lst in (self.link_list, self.ref_list):
+            lst.setMinimumWidth(px(80))
+            lst.setIconSize(QSize(px(16), px(16)))
+
     def load(self, node: TaskNode | None) -> None:
         self.commit()  # ulož předchozí
         self.node = node
@@ -404,7 +415,7 @@ class TaskDetailPanel(QWidget):
             path = link.get("path", "")
             exists = os.path.exists(path)
             item = QListWidgetItem(link.get("name", path))
-            item.setIcon(icons.icon("file" if exists else "warning", 14,
+            item.setIcon(icons.icon("file" if exists else "warning", theme.px(14),
                                     t.text2 if exists else t.status_fg["blocked"]))
             item.setToolTip(path + ("" if exists else "\n(soubor nenalezen)"))
             item.setData(PATH_ROLE, path)
@@ -464,7 +475,7 @@ class TaskDetailPanel(QWidget):
             target = self.resolver(rid) if self.resolver else None
             title = target.title if target is not None else "(smazaný úkol)"
             item = QListWidgetItem(title)
-            item.setIcon(icons.icon("reply", 14, t.text2 if target is not None else t.muted))
+            item.setIcon(icons.icon("reply", theme.px(14), t.text2 if target is not None else t.muted))
             item.setData(REF_ROLE, rid)
             if target is not None:
                 item.setToolTip(breadcrumb(target))

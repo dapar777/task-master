@@ -1,12 +1,12 @@
 """Stavební kameny nového vzhledu: chipy, štítky, segmentový přepínač, ikonová tlačítka.
 
-Barvy berou z app/theme.py; po přepnutí tématu je hlavní okno zavolá
-metodou retheme(), pokud si něco drží mimo QSS.
+Barvy berou z app/theme.py; po přepnutí tématu nebo zoomu je hlavní okno
+zavolá metodou retheme(), pokud si něco (barvu, písmo, rozměr) drží mimo QSS.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -45,6 +45,10 @@ class Chip(QLabel):
         """Holý text chipu (text() vrací rich text s tečkou/ikonou)."""
         return self._text
 
+    def retheme(self) -> None:
+        """Po zoomu: nový stylesheet (odsazení, poloměr) a ikona v nové velikosti."""
+        self.set_colors(self._fg, self._bg)
+
     def set_text(self, text: str, dot: str | None = None, icon: str | None = None) -> None:
         self._text = text
         self._dot = dot
@@ -54,11 +58,12 @@ class Chip(QLabel):
     def _render(self) -> None:
         parts = []
         if self._dot:
-            parts.append(f'<span style="color:{self._dot}; font-size:9px;">&#9679;</span>')
+            parts.append(f'<span style="color:{self._dot}; font-size:{theme.px(9)}px;">&#9679;</span>')
         if self._icon:
             # ikona jako obrázek uvnitř rich textu – vykreslí se v barvě textu
-            path = icons.png_file(self._icon, 12, self._fg)
-            parts.append(f'<img src="{path}" width="12" height="12">')
+            sz = theme.px(12)
+            path = icons.png_file(self._icon, sz, self._fg)
+            parts.append(f'<img src="{path}" width="{sz}" height="{sz}">')
         txt = self._text
         if self._mono:
             fam = ", ".join(f"'{f}'" for f in theme.MONO_FAMILIES)
@@ -95,12 +100,20 @@ class Badge(Chip):
     def __init__(self, text: str, parent=None, tooltip: str = ""):
         t = theme.current()
         super().__init__(text, t.badge_fg, "transparent", parent=parent)
-        self.setStyleSheet(
-            f"QLabel{{color:{t.badge_fg}; border:1px solid {t.badge_border}; border-radius:9px;"
-            f" padding:0 6px; font-size:8pt; font-weight:600; background:transparent;}}"
-        )
+        self._apply_style()
         if tooltip:
             self.setToolTip(tooltip)
+
+    def _apply_style(self) -> None:
+        t = theme.current()
+        self.setStyleSheet(theme.scaled(
+            f"QLabel{{color:{t.badge_fg}; border:1px solid {t.badge_border}; border-radius:9px;"
+            f" padding:0 6px; font-size:8pt; font-weight:600; background:transparent;}}"
+        ))
+
+    def retheme(self) -> None:
+        self._apply_style()
+        self._render()
 
 
 class TitleLabel(QLabel):
@@ -112,26 +125,35 @@ class TitleLabel(QLabel):
     nahoře i dole.
     """
 
-    PAD = 8
+    PAD = 8  # px bez zoomu
 
     def __init__(self, text: str = "", pt: float = 14.5, parent=None):
         super().__init__(text, parent)
+        self._pt = pt
         self.setFont(theme.title_font(pt))
         self.setWordWrap(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
+    def retheme(self) -> None:
+        f = theme.title_font(self._pt)
+        f.setStrikeOut(self.font().strikeOut())
+        self.setFont(f)
+
+    def _pad(self) -> int:
+        return theme.px(self.PAD)
+
     def heightForWidth(self, w: int) -> int:
         h = super().heightForWidth(w)
-        return h + self.PAD if h > 0 else h
+        return h + self._pad() if h > 0 else h
 
     def sizeHint(self):
         s = super().sizeHint()
-        s.setHeight(s.height() + self.PAD)
+        s.setHeight(s.height() + self._pad())
         return s
 
     def minimumSizeHint(self):
         s = super().minimumSizeHint()
-        s.setHeight(s.height() + self.PAD)
+        s.setHeight(s.height() + self._pad())
         return s
 
 
@@ -149,6 +171,9 @@ class Kbd(QLabel):
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
         self.setObjectName("kbd")
+        self.retheme()
+
+    def retheme(self) -> None:
         self.setFont(theme.mono_font(8))
 
 
@@ -179,8 +204,15 @@ class IconButton(QToolButton):
             self.setProperty("framed", "true")
         self.retheme()
 
+    def set_icon_name(self, name: str) -> None:
+        if name != self._icon_name:
+            self._icon_name = name
+            self.retheme()
+
     def retheme(self) -> None:
-        self.setIcon(icons.icon(self._icon_name, self._size, self._color))
+        sz = theme.px(self._size)
+        self.setIconSize(QSize(sz, sz))
+        self.setIcon(icons.icon(self._icon_name, sz, self._color))
 
 
 class PrimaryButton(QPushButton):
@@ -193,7 +225,9 @@ class PrimaryButton(QPushButton):
 
     def retheme(self) -> None:
         if self._icon_name:
-            self.setIcon(icons.icon(self._icon_name, 14, theme.current().accent_fg))
+            sz = theme.px(14)
+            self.setIconSize(QSize(sz, sz))
+            self.setIcon(icons.icon(self._icon_name, sz, theme.current().accent_fg))
 
 
 class SegmentedControl(QFrame):
@@ -205,13 +239,12 @@ class SegmentedControl(QFrame):
         super().__init__(parent)
         self.setObjectName("segment")
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(2, 2, 2, 2)
-        self._layout.setSpacing(2)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons: dict[str, QToolButton] = {}
         self._icons: dict[str, str] = {}
         self._group.buttonClicked.connect(self._on_clicked)
+        self.retheme()
 
     def add(self, key: str, text: str, icon_name: str | None = None, tooltip: str = "") -> None:
         b = QToolButton(self)
@@ -258,5 +291,10 @@ class SegmentedControl(QFrame):
                     b.setToolTip(b.text())
 
     def retheme(self) -> None:
+        m = theme.px(2)
+        self._layout.setContentsMargins(m, m, m, m)
+        self._layout.setSpacing(m)
+        sz = theme.px(14)
         for k, name in self._icons.items():
-            self._buttons[k].setIcon(icons.icon(name, 14))
+            self._buttons[k].setIconSize(QSize(sz, sz))
+            self._buttons[k].setIcon(icons.icon(name, sz))

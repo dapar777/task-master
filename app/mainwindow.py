@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtCore import QEvent, QSettings, QStandardPaths, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -108,10 +108,22 @@ class MainWindow(QMainWindow):
         self.filter_store = FilterStore(cfg_dir / "filters.json")
         self._filter_actions: list[QAction] = []
 
+        # zoom: první krok (kolečko/zkratka) se provede hned, další, které
+        # přijdou během čerstvého přestylování, se slijí do jednoho pozdějšího
+        # (přestylování celého okna stojí desítky až stovky ms)
+        self._zoom_pending: float | None = None
+        self._zoom_timer = QTimer(self)
+        self._zoom_timer.setSingleShot(True)
+        self._zoom_timer.setInterval(220)
+        self._zoom_timer.timeout.connect(self._flush_zoom)
+
         self._build_ui()
         self._build_actions()
         self._build_menus()
         self._restore_geometry()
+        self._update_zoom_label()
+        # Ctrl+kolečko zoomuje celé UI, i nad editorem (ten by jinak zvětšoval jen sebe)
+        QApplication.instance().installEventFilter(self)
         self._open_initial_workspace()
 
     # ------------------------------------------------------------------
@@ -159,8 +171,6 @@ class MainWindow(QMainWindow):
         left = QFrame()
         left.setObjectName("sidePanel")
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(12, 12, 12, 12)
-        left_layout.setSpacing(10)
         left_layout.addWidget(self.filter_panel)
         left_layout.addWidget(self.tree, 1)
 
@@ -171,10 +181,7 @@ class MainWindow(QMainWindow):
         self.detail.navigateTo.connect(self._navigate_to)
         self.detail.addRefRequested.connect(self._add_ref_dialog)
 
-        # explicitní minima: splitter je bere místo (větších) hintů obsahu,
-        # takže okno jde zúžit; obsah se pak zkrátí/ořízne, ne okno zamkne
-        left.setMinimumWidth(120)
-        self.detail.setMinimumWidth(200)
+        self.left_panel = left
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(self.detail)
@@ -200,7 +207,6 @@ class MainWindow(QMainWindow):
         self.filter_host = QFrame()
         self.filter_host.setObjectName("filterHost")
         fh = QVBoxLayout(self.filter_host)
-        fh.setContentsMargins(20, 10, 20, 12)
         self.filter_host_layout = fh
         self.filter_host.setVisible(False)
         cp.addWidget(self.filter_host)
@@ -229,15 +235,37 @@ class MainWindow(QMainWindow):
         self.ws_label = QLabel("")
         # dlouhá cesta nesmí diktovat minimální šířku okna – smí se oříznout
         self.ws_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.ws_label.setMinimumWidth(80)
         self.status.addPermanentWidget(self.ws_label, 1)
+        # zoom UI (jen když není 100 %)
+        self.zoom_label = QLabel("")
+        self.zoom_label.setToolTip("Zoom UI (Ctrl+kolečko, Ctrl+± ; Ctrl+0 vrátí 100 %)")
+        self.status.addPermanentWidget(self.zoom_label)
+        self._apply_metrics()
+
+    def _apply_metrics(self) -> None:
+        """Rozměry hlavního okna držené mimo QSS (okraje, minima) podle zoomu."""
+        px = theme.px
+        self.left_layout.setContentsMargins(px(12), px(12), px(12), px(12))
+        self.left_layout.setSpacing(px(10))
+        # explicitní minima: splitter je bere místo (větších) hintů obsahu,
+        # takže okno jde zúžit; obsah se pak zkrátí/ořízne, ne okno zamkne
+        self.left_panel.setMinimumWidth(px(120))
+        self.detail.setMinimumWidth(px(200))
+        self.filter_host_layout.setContentsMargins(px(20), px(10), px(20), px(12))
+        self.chip_bar_layout.setContentsMargins(px(20), px(8), px(20), px(8))
+        self.chip_bar_layout.setSpacing(px(8))
+        self.chip_row.setSpacing(px(6))
+        self.ws_label.setMinimumWidth(px(80))
+        search = self.filter_panel.name_edit
+        search.setMinimumWidth(px(60))
+        search.setMaximumWidth(px(320))
+        self._header_compact = None  # okraje hlavičky přepočítá _update_header_density
+        self._update_header_density()
 
     def _build_header(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("headerBar")
         lay = QHBoxLayout(bar)
-        lay.setContentsMargins(16, 8, 16, 8)
-        lay.setSpacing(12)
 
         # bez loga a názvu aplikace (má je titulek okna a hlavní panel) –
         # vlevo jen cesta k prostoru, která se smí oříznout
@@ -256,8 +284,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.view_segment)
 
         search = self.filter_panel.name_edit
-        search.setMinimumWidth(60)
-        search.setMaximumWidth(320)
         search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         search.setClearButtonEnabled(True)
         self._search_action = search.addAction(icons.icon("search"), QLineEdit.ActionPosition.LeadingPosition)
@@ -267,6 +293,11 @@ class MainWindow(QMainWindow):
         self.palette_btn.clicked.connect(lambda: self.act["app.command_palette"].trigger())
         lay.addWidget(self.palette_btn)
 
+        # přepínač světlé/tmavé: měsíc ve světlém, slunce v tmavém (ikona = cíl)
+        self.theme_btn = IconButton("moon", "Tmavé téma")
+        self.theme_btn.clicked.connect(lambda: self.act["view.dark_theme"].toggle())
+        lay.addWidget(self.theme_btn)
+
         self.new_btn = PrimaryButton("Nový úkol", "plus")
         self.new_btn.setToolTip("Nový úkol (Ctrl+N)")
         self.new_btn.clicked.connect(lambda: self.act["task.new"].trigger())
@@ -275,16 +306,17 @@ class MainWindow(QMainWindow):
         self._header_compact = None
         return bar
 
-    HEADER_COMPACT_BELOW = 1100  # px: pod touto šířkou jen ikony v hlavičce
+    HEADER_COMPACT_BELOW = 1100  # px (bez zoomu): pod touto šířkou jen ikony v hlavičce
 
     def _update_header_density(self) -> None:
         """Úzké okno: přepínač a tlačítka v hlavičce jen s ikonami."""
-        compact = self.width() < self.HEADER_COMPACT_BELOW
+        compact = self.width() < theme.px(self.HEADER_COMPACT_BELOW)
         if compact == self._header_compact:
             return
         self._header_compact = compact
-        self.header_layout.setSpacing(8 if compact else 12)
-        self.header_layout.setContentsMargins(10 if compact else 16, 8, 10 if compact else 16, 8)
+        px = theme.px
+        self.header_layout.setSpacing(px(8 if compact else 12))
+        self.header_layout.setContentsMargins(px(10 if compact else 16), px(8), px(10 if compact else 16), px(8))
         self.view_segment.set_compact(compact)
         style = (Qt.ToolButtonStyle.ToolButtonIconOnly if compact
                  else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -299,7 +331,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(icon)
         QApplication.instance().setWindowIcon(icon)
         appicon.apply_taskbar_identity(self, variant)
-        self._search_action.setIcon(icons.icon("search"))
+        self._search_action.setIcon(icons.icon("search", theme.px(16)))
+        dark = theme.is_dark()
+        self.theme_btn.set_icon_name("sun" if dark else "moon")
+        self.theme_btn.setToolTip("Přepnout na světlé téma" if dark else "Přepnout na tmavé téma")
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -313,8 +348,7 @@ class MainWindow(QMainWindow):
         bar = QFrame()
         bar.setObjectName("chipBar")
         lay = QHBoxLayout(bar)
-        lay.setContentsMargins(20, 8, 20, 8)
-        lay.setSpacing(8)
+        self.chip_bar_layout = lay
         lbl = QLabel("Filtr")
         lbl.setObjectName("faintLabel")
         lay.addWidget(lbl)
@@ -324,7 +358,6 @@ class MainWindow(QMainWindow):
         chips_host.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.chip_row = QHBoxLayout(chips_host)
         self.chip_row.setContentsMargins(0, 0, 0, 0)
-        self.chip_row.setSpacing(6)
         lay.addWidget(chips_host, 1)
         self.criteria_btn = IconButton("chevron_down", "Zobrazit/skrýt kritéria filtru",
                                        text="Kritéria", framed=True)
@@ -503,6 +536,13 @@ class MainWindow(QMainWindow):
         # tmavé téma – přepínatelná akce, stav v QSettings (main.py ho čte při startu)
         dk = self._make("view.dark_theme", self._toggle_theme, checkable=True)
         dk.setChecked(self.settings.value("theme", "light", type=str) == "dark")
+        # zoom celého UI (Ctrl+kolečko obsluhuje eventFilter)
+        self._make("view.zoom_in", lambda: self._zoom_step(+1))
+        self._make("view.zoom_out", lambda: self._zoom_step(-1))
+        self._make("view.zoom_reset", self._reset_zoom)
+        # Ctrl+= je „plus bez Shiftu" na anglické klávesnici – pevný doplněk k Ctrl++
+        sc = QShortcut(QKeySequence("Ctrl+="), self)
+        sc.activated.connect(lambda: self._zoom_step(+1))
         # Navigace / fokus
         self._make("focus.filter", self._focus_filter)
         self._make("focus.tree", self._focus_tree)
@@ -527,6 +567,7 @@ class MainWindow(QMainWindow):
         "app.stats": "chart", "app.command_palette": "command", "app.shortcuts": "keyboard",
         "view.tree": "tree", "view.list": "list", "view.cards": "cards",
         "view.compact_cards": "sliders", "view.dark_theme": "moon",
+        "view.zoom_in": "zoom_in", "view.zoom_out": "zoom_out", "view.zoom_reset": "rotate",
         "filter.save": "bookmark", "focus.filter": "search",
     }
 
@@ -534,7 +575,7 @@ class MainWindow(QMainWindow):
         for cid, name in self.MENU_ICONS.items():
             act = self.act.get(cid)
             if act is not None:
-                act.setIcon(icons.icon(name, 16))
+                act.setIcon(icons.icon(name, theme.px(16)))
 
     @staticmethod
     def _polish_menu(menu: QMenu) -> QMenu:
@@ -583,6 +624,9 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act["view.compact_cards"])
         m_view.addAction(self.act["view.dark_theme"])
         m_view.addSeparator()
+        for cid in ("view.zoom_in", "view.zoom_out", "view.zoom_reset"):
+            m_view.addAction(self.act[cid])
+        m_view.addSeparator()
         for cid in ("focus.filter", "focus.tree", "focus.editor", "focus.title", "focus.links"):
             m_view.addAction(self.act[cid])
 
@@ -620,17 +664,71 @@ class MainWindow(QMainWindow):
         self._retheme()
 
     def _retheme(self) -> None:
-        """Překreslí vše, co si barvy drží mimo QSS (ikony, chipy, karty)."""
+        """Překreslí vše, co si barvy nebo rozměry drží mimo QSS (ikony, chipy,
+        karty, okraje) – po přepnutí tématu i po zoomu."""
         for w in self.findChildren(QWidget):
             hook = getattr(w, "retheme", None)
             if callable(hook):
                 hook()
+        self._apply_metrics()
         self._retheme_header()
         self._apply_menu_icons()
         if self.workspace:
             self._populate()
             if self._current_node is not None:
                 self._select_in_view(self._current_node)
+
+    # ------------------------------------------------------------------
+    # Zoom celého UI (jeden faktor v theme; Ctrl+kolečko, Ctrl+±, Ctrl+0)
+    # ------------------------------------------------------------------
+    def _zoom_step(self, direction: int) -> None:
+        base = self._zoom_pending if self._zoom_pending is not None else theme.zoom()
+        self._zoom_pending = max(theme.ZOOM_MIN,
+                                 min(theme.ZOOM_MAX, round(base + direction * theme.ZOOM_STEP, 2)))
+        if self._zoom_timer.isActive():
+            return  # právě proběhlo přestylování – slij do dalšího
+        self._flush_zoom()
+
+    def _reset_zoom(self) -> None:
+        self._zoom_pending = 1.0
+        self._zoom_timer.stop()
+        self._flush_zoom()
+
+    def _flush_zoom(self) -> None:
+        if self._zoom_pending is None:
+            return
+        factor = self._zoom_pending
+        self._zoom_pending = None
+        if abs(factor - theme.zoom()) < 1e-6:
+            return
+        self._apply_zoom(factor)
+        self._zoom_timer.start()  # okno pro slévání kroků, které přijdou hned po
+
+    def _apply_zoom(self, factor: float) -> None:
+        """Nastaví zoom, přegeneruje stylesheet a přepočítá vše mimo QSS."""
+        app = QApplication.instance()
+        self.setUpdatesEnabled(False)
+        try:
+            theme.apply(app, theme.current().name, zoom=factor)
+            icons.clear_cache()
+            self._retheme()
+        finally:
+            self.setUpdatesEnabled(True)
+        self.settings.setValue("zoom", theme.zoom())
+        self._update_zoom_label()
+
+    def _update_zoom_label(self) -> None:
+        z = theme.zoom()
+        self.zoom_label.setText("" if abs(z - 1.0) < 1e-6 else f"{round(z * 100)} %")
+        self.zoom_label.setVisible(bool(self.zoom_label.text()))
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Wheel and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta:
+                self._zoom_step(1 if delta > 0 else -1)
+            return True
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
     # Fokus / navigace klávesnicí
@@ -2427,7 +2525,8 @@ class MainWindow(QMainWindow):
         if self.main_splitter.orientation() != want:
             self.main_splitter.setOrientation(want)
             if want == Qt.Orientation.Horizontal:
-                self.main_splitter.setSizes([360, max(1, self.width() - 360)])
+                w0 = theme.px(360)
+                self.main_splitter.setSizes([w0, max(1, self.width() - w0)])
             else:
                 self.main_splitter.setSizes([max(1, self.height() // 3),
                                              max(1, self.height() * 2 // 3)])

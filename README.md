@@ -50,13 +50,20 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 ## Vzhled
 
 Aplikace používá **Solarized** paletu ve dvou tématech – světlé (teplý papír)
-a **tmavé** (menu *Zobrazení → Tmavé téma*, volba se pamatuje). Všechny barvy,
-písma a QSS žijí v [`app/theme.py`](app/theme.py); ikony jsou kreslené
-(`app/icons.py`), ne emoji.
+a **tmavé** (ikona měsíce/slunce v hlavičce nebo menu *Zobrazení → Tmavé
+téma*, volba se pamatuje). Všechny barvy, písma a QSS žijí
+v [`app/theme.py`](app/theme.py); ikony jsou kreslené (`app/icons.py`), ne emoji.
 
 - **Hlavička okna** – název prostoru, přepínač *Strom / Seznam / Bez rušení*,
   hledání v názvu (`Ctrl+F`; zůstává kritériem filtru), tlačítko *Příkazy*
-  (`Ctrl+Shift+P`) a *Nový úkol*. Menu bar zůstává celý.
+  (`Ctrl+Shift+P`), **přepínač světlého/tmavého tématu** a *Nový úkol*.
+  Menu bar zůstává celý.
+- **Zoom celého UI** – `Ctrl+kolečko`, `Ctrl++` / `Ctrl+-`, `Ctrl+0` vrátí
+  100 % (menu *Zobrazení → Přiblížit / Oddálit / Původní velikost*). Jeden
+  faktor (70–200 %) zvětšuje písma, odsazení, výšky řádků, chipy, karty
+  i text editoru; aktuální hodnota je vpravo ve stavovém řádku (při 100 % se
+  neukazuje) a pamatuje se mezi spuštěními. `Ctrl+kolečko` nad editorem
+  zoomuje celou aplikaci, ne jen text.
 - **Stav a priorita jako chipy** – ve stromu i na kartách místo podbarvených
   buněk: modrá *Probíhá*, žlutá *Čeká* / odklad (s odpočtem), červená
   *Blokováno* (`auto` u automatického), zelená *Hotovo*; priorita jako štítek
@@ -143,6 +150,8 @@ přes **klávesové zkratky** a v **příkazové paletě** (`Ctrl+Shift+P`). Ž�
 | Změnit pořadí | přetáhni úkol **mezi** dva úkoly, nebo `Ctrl+W`/`Ctrl+Q` |
 | Zobrazení strom/seznam/karty | `Ctrl+L` (cyklit) nebo menu *Zobrazení* |
 | Úsporné karty (Bez rušení) | `Ctrl+Shift+E` nebo menu *Zobrazení* (nižší karty mimo Probíhá/Ke zpracování) |
+| Světlé / tmavé téma | ikona měsíce/slunce v hlavičce nebo menu *Zobrazení* |
+| Zoom UI | `Ctrl+kolečko`, `Ctrl++` / `Ctrl+-`, `Ctrl+0` = 100 % |
 | Filtr | combo uloženého filtru; *Kritéria ▸* rozbalí podmínky |
 | Uložit / spravovat filtr | menu *Filtry* (`Ctrl+Shift+S` uložit) |
 | Uložit / obnovit | `Ctrl+S` (autosave těla) / `F5` |
@@ -170,6 +179,7 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
 | `Ctrl+Shift+D` | Režim Bez rušení (karty) | kdekoli |
 | `Ctrl+Shift+E` | Úsporné karty (nižší mimo Probíhá/Ke zpracování) | kdekoli |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Přiblížit / oddálit / původní velikost UI (též `Ctrl+kolečko`, `Ctrl+=`) | kdekoli |
 | `Ctrl+W` / `Ctrl+Q` | Posunout úkol v pořadí nahoru / dolů | fokus na stromu nebo kartách |
 | `Ctrl+↑` / `Ctrl+↓` | Zvýšit / snížit prioritu | fokus na stromu nebo kartách |
 | `Ctrl+T` | Přepnout vlaječku 🚩 | kdekoli |
@@ -243,6 +253,10 @@ Aplikace drží strom **v paměti**; z disku se čte jen to, co se změnilo:
   (`moved`), mazání zálohuje jen mazané podstromy (`deleted`), přeuspořádání
   jen metadata (`fields`) a vkládání jen id nových úkolů (`created`). Kopie
   celého prostoru (`snapshot`) zůstává jen jako fallback.
+- **Zoom** přegeneruje stylesheet a přestaví všechny karty (jejich otisk
+  obsahuje faktor zoomu), což stojí desítky až stovky ms. Kroky kolečka, které
+  přijdou během 220 ms po přestylování, se proto slévají do jednoho dalšího
+  kroku (`_zoom_timer`), první krok se ale provede hned.
 
 Orientační čísla (medián, 750 úkolů, původní hodnoty v závorce): vytvoření
 podúkolu ~160 ms (4,1 s), přeuspořádání tažením ~160 ms (3,4 s), mazání ~240 ms
@@ -317,3 +331,4 @@ výběr a pohled**:
 | `test_context_key.py` | klávesa kontextového menu ve stromu, seznamu i kartách |
 | `test_order_unique.py` | pořadí nového úkolu je **globálně** jedinečné (i vůči skrytým); `normalize_orders()` nepřepisuje strom |
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
+| `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |

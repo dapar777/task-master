@@ -89,9 +89,20 @@ Nikde jinde hex barvy nepiš (`tests/test_theme.py` to hlídá; výjimka je
 legacy `constants.STATUS_COLORS` pro staré testy). Ikony jsou kreslené
 (`icons.icon("flag")`), ne emoji; společné prvky (Chip, StatusChip,
 PriorityPill, SegmentedControl, IconButton, TitleLabel) jsou v `app/widgets.py`.
-Widget, který si barvu drží mimo QSS, má metodu `retheme()` – hlavní okno ji
-po přepnutí tématu zavolá na všech potomcích. Obrázky pro QSS (`url(...)`)
-generuje `theme._write_asset()` jako SVG do temp adresáře, ne do repa.
+Widget, který si barvu nebo rozměr drží mimo QSS, má metodu `retheme()` – hlavní
+okno ji po přepnutí tématu **i po zoomu** zavolá na všech potomcích. Obrázky pro
+QSS (`url(...)`) generuje `theme._write_asset()` jako SVG do temp adresáře, ne do repa.
+
+**Zoom** – jeden faktor `theme.zoom()` (0.7–2.0, v QSettings `zoom`). QSS
+prochází `theme.scaled()` (násobí každé `Npx`/`Npt`, `1px` hranice nechává),
+písma z `theme.*_font()` jdou přes `pt()`. **Pixelový rozměr v kódu piš přes
+`theme.px(n)`** (okraje layoutů, `setIconSize`, prahy šířky, geometrie v
+`paintEvent`) a pokud ho widget nastavuje v konstruktoru, přesuň ho do
+`retheme()`, jinak po zoomu zůstane starý. `_card_stamp` obsahuje zoom, karty
+se tedy po zoomu přestaví; strom si výšky řádků bere z delegáta přes `px()`.
+Zoom mění hlavní okno v `_apply_zoom()` → `theme.apply(..., zoom=)` +
+`icons.clear_cache()` + `_retheme()`; `Ctrl+kolečko` chytá `eventFilter`
+nainstalovaný na `QApplication` (i nad editorem).
 
 **Úzké okno** (jde zúžit na ~350 px) – tři nezávislé prahy, každý ve své třídě:
 `MainWindow.HEADER_COMPACT_BELOW` (hlavička jen s ikonami),
