@@ -19,7 +19,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
 - 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
 - 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
-- 📧 **Úkoly z e-mailu** (`Ctrl+Shift+M`, menu *Soubor*) – nepřečtené zprávy ze schránky (IMAP, výchozí `dapar777_taskmaster@seznam.cz`) se stanou úkoly v kořenové sekci **`_INBOX`** (založí se, když chybí): předmět = název, odesílatel + datum + text = popis (HTML se převede na markdown), **přílohy** se uloží do složky úkolu a přidají mezi odkazy. Zpráva se ve schránce označí jako přečtená; Message-ID v `_mail_id` brání duplicitám. Volitelně **automatická kontrola** v intervalu. Viz [Úkoly z e-mailu](#úkoly-z-e-mailu).
+- 📧 **Úkoly z e-mailu** (`Ctrl+Shift+M`, menu *Soubor*) – nepřečtené zprávy ze schránky (IMAP, výchozí `dapar777_taskmaster@seznam.cz`) se stanou úkoly v kořenové sekci **`_INBOX`** (založí se, když chybí): předmět = název, odesílatel + datum + text = popis (HTML se převede na markdown), **přílohy** se uloží do složky úkolu a přidají mezi odkazy. Zpráva se ve schránce označí jako přečtená; Message-ID v `_mail_id` brání duplicitám. Schránka se **kontroluje sama** (výchozí každou minutu, i po startu). Viz [Úkoly z e-mailu](#úkoly-z-e-mailu).
 - ➕ **Nový úkol** (`Ctrl+N`) vzniká jako **sourozenec** aktuálního, **podúkol** (`Ctrl+Shift+N`) pod aktuálním – přes **dialog s metadaty** (i s klávesovými zkratkami `Ctrl+T` / `Ctrl+↑↓`); kategorie a priorita se **dědí** od nadřazeného úkolu. Zařazení do pořadí respektuje zobrazení:
   - **strom** – nový úkol hned **za** aktuální; podúkol **na konec** seznamu podúkolů daného úkolu (i těch neviditelných);
   - **seznam / Bez rušení** – nový úkol **pod** aktuální; podúkol **za poslední** viditelný podúkol daného úkolu, a nejsou-li žádné ve výběru, **hned nad** aktuální úkol.
@@ -251,7 +251,8 @@ výchozí prioritu.
 
 **Nastavení e-mailu…** (menu *Soubor*): server (výchozí `imap.seznam.cz`, port 993,
 SSL), přihlašovací jméno (výchozí `dapar777_taskmaster@seznam.cz`), heslo, složka
-(`INBOX`) a interval **automatické kontroly** v minutách (0 = vypnuto). Tlačítko
+(`INBOX`) a interval **automatické kontroly** v minutách (výchozí **1 min**, 0 = jen ručně);
+kontrola proběhne i hned po startu aplikace. Tlačítko
 *Otestovat připojení* ověří přihlášení a spočítá nepřečtené zprávy. Heslo se
 ukládá do **Správce pověření Windows** (položka `TaskMaster/mail`), ostatní
 do nastavení aplikace. Ve schránce na Seznamu musí být IMAP povolený

@@ -39,6 +39,7 @@ MAIL_ID_KEY = "_mail_id"
 DEFAULT_HOST = "imap.seznam.cz"
 DEFAULT_PORT = 993
 DEFAULT_USER = "dapar777_taskmaster@seznam.cz"
+DEFAULT_INTERVAL_MIN = 1  # automatická kontrola schránky (0 = vypnuto)
 NO_SUBJECT = "(bez předmětu)"
 FETCH_LIMIT = 100  # zpráv na jeden import (ochrana před přeplněnou schránkou)
 _CRED_TARGET = "TaskMaster/mail"  # záznam ve Správci pověření Windows
@@ -89,7 +90,7 @@ def _cred_read() -> str | None:
 @dataclass
 class MailSettings:
     """Připojení ke schránce. Heslo jde do Správce pověření (když je pywin32),
-    ostatní do QSettings; ``interval_min`` 0 = automatická kontrola vypnutá."""
+    ostatní do QSettings; ``interval_min`` = automatická kontrola (výchozí 1 min, 0 = vypnuto)."""
 
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
@@ -97,7 +98,7 @@ class MailSettings:
     user: str = DEFAULT_USER
     password: str = ""
     folder: str = "INBOX"
-    interval_min: int = 0
+    interval_min: int = DEFAULT_INTERVAL_MIN
 
     @property
     def complete(self) -> bool:
@@ -111,7 +112,7 @@ class MailSettings:
             ssl=bool(qs.value("mail_ssl", True, type=bool)),
             user=(qs.value("mail_user", DEFAULT_USER, type=str) or DEFAULT_USER).strip(),
             folder=(qs.value("mail_folder", "INBOX", type=str) or "INBOX").strip(),
-            interval_min=max(0, int(qs.value("mail_interval_min", 0, type=int) or 0)),
+            interval_min=max(0, int(qs.value("mail_interval_min", DEFAULT_INTERVAL_MIN, type=int))),
         )
         pw = _cred_read() if secure else None
         s.password = pw if pw is not None else (qs.value("mail_password", "", type=str) or "")

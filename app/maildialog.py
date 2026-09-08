@@ -47,6 +47,7 @@ class MailSettingsDialog(QDialog):
         self.interval.setRange(0, 24 * 60)
         self.interval.setSuffix(" min")
         self.interval.setSpecialValueText("vypnuto")
+        self.interval.setToolTip("Schránka se kontroluje sama v tomto intervalu (i hned po startu); 0 = jen ručně")
         self.interval.setValue(int(settings.interval_min))
 
         form = QFormLayout()

@@ -2842,10 +2842,13 @@ class MainWindow(QMainWindow):
         self._apply_mail_timer()
         return True
 
-    def _apply_mail_timer(self) -> None:
+    def _apply_mail_timer(self, first_check_ms: int = 4000) -> None:
+        """Periodická kontrola schránky; s nastaveným intervalem proběhne první
+        kontrola krátce po startu (resp. po změně nastavení), ne až za interval."""
         minutes = int(self.mail_settings.interval_min or 0)
         if minutes > 0 and self.mail_settings.complete:
             self._mail_timer.start(minutes * 60 * 1000)
+            QTimer.singleShot(first_check_ms, self._import_mail_auto)
         else:
             self._mail_timer.stop()
 
@@ -2869,6 +2872,7 @@ class MainWindow(QMainWindow):
         if not self.mail_settings.complete:
             if auto or not self._open_mail_settings() or not self.mail_settings.complete:
                 return
+            return  # dialog už kontrolu naplánoval (_apply_mail_timer), nespouštět dvakrát
         self.status.showMessage("Načítám e-maily…")
         w = mailimport.MailWorker(mailimport.fetch_unseen, self.mail_settings, parent=self)
         w.done.connect(lambda res, err, auto=auto: self._on_mail_fetched(res, err, auto))

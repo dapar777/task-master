@@ -173,8 +173,8 @@ check("bez nových zpráv sekce nevzniká", import_messages(Workspace(tmp / "ws3
 print("3) MailSettings")
 ini = QSettings(str(tmp / "mail.ini"), QSettings.Format.IniFormat)
 d = MailSettings.load(ini, secure=False)
-check("výchozí: seznam.cz, 993, SSL, adresa schránky", d.host == "imap.seznam.cz" and d.port == 993 and d.ssl
-      and d.user == "dapar777_taskmaster@seznam.cz" and d.folder == "INBOX" and d.interval_min == 0)
+check("výchozí: seznam.cz, 993, SSL, adresa schránky, kontrola každou minutu", d.host == "imap.seznam.cz" and d.port == 993 and d.ssl
+      and d.user == "dapar777_taskmaster@seznam.cz" and d.folder == "INBOX" and d.interval_min == 1)
 check("bez hesla není nastavení úplné", not d.complete)
 d.password = "tajne"
 d.interval_min = 15
@@ -269,10 +269,14 @@ check("chybný import doběhl", wait_idle())
 check("chyba ve stavovém řádku, úkoly beze změny", "Nelze se připojit" in win.status.currentMessage() and len(inbox.children) == 2)
 pending["error"] = None
 
-# periodická kontrola se zapne podle intervalu
+# periodická kontrola se zapne podle intervalu a hned udělá první kontrolu
+pending["messages"] = [MailMessage("21", "<auto@x>", "Automaticky", "", "", "", [])]
 win.mail_settings.interval_min = 5
-win._apply_mail_timer()
+win._apply_mail_timer(first_check_ms=10)
 check("timer běží s intervalem 5 min", win._mail_timer.isActive() and win._mail_timer.interval() == 5 * 60 * 1000)
+QTest.qWait(60)
+check("první kontrola proběhla hned po zapnutí", wait_idle() and any(c.title == "Automaticky" for c in inbox.children))
+pending["messages"] = []
 win.mail_settings.interval_min = 0
 win._apply_mail_timer()
 check("interval 0 timer vypne", not win._mail_timer.isActive())
@@ -280,7 +284,7 @@ check("interval 0 timer vypne", not win._mail_timer.isActive())
 # undo posledního importu smaže nové úkoly (levný záznam „created")
 win._undo()
 app.processEvents()
-check("undo importu smaže nové úkoly", not inbox.children or all(not c.path.exists() for c in inbox.children))
+check("undo posledního importu smaže jeho úkoly", not any(c.title == "Automaticky" for c in inbox.children) and len(inbox.children) == 2)
 
 win.close()
 print()

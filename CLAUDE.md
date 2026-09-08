@@ -98,7 +98,9 @@ která mění metadata více uzlů, ulož je přes `undo.push_fields(...)`.
 běží v `MailWorker` (QThread), úkoly zakládá **hlavní vlákno** přes
 `import_messages(workspace, messages)` – strom není thread-safe. Dvě fáze:
 stáhnout → založit → teprve pak označit jako přečtené (schránka zůstává mezi
-fázemi otevřená). Message-ID jde do meta `_mail_id` (dedup napříč celým
+fázemi otevřená). `_mail_timer` kontroluje schránku periodicky (`interval_min`,
+výchozí 1; `_apply_mail_timer` udělá první kontrolu hned) – `auto=True` = bez dialogů.
+Message-ID jde do meta `_mail_id` (dedup napříč celým
 prostorem, Android ho zachová); přílohy do adresáře úkolu s **relativní**
 `_links.path` – `TaskNode.link_path()` ji řeší vůči adresáři úkolu (detail,
 paleta), absolutní cesty a URI nechává. HTML těla převádí `app/htmlmd.py`
