@@ -449,6 +449,15 @@ class TaskNode:
     def links(self) -> list[dict]:
         return self.meta.get("_links", []) or []
 
+    def link_path(self, link: dict) -> str:
+        """Cesta odkazu k otevření. Relativní cesta (příloha uložená do
+        adresáře úkolu – Android klient, import z e-mailu) se bere vůči
+        adresáři úkolu; absolutní cesty a URI zůstávají."""
+        p = str(link.get("path", "") or "")
+        if p and "://" not in p and not Path(p).is_absolute():
+            return str(self.path / p)
+        return p
+
     # ----- odkazy na jiné úkoly (cross-reference podle _id) -----
     @property
     def task_id(self) -> str:

@@ -19,6 +19,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ✏️ **Inline přejmenování** – název se edituje přímo v položce stromu (`F2`), žádný dialog.
 - 📋 **Schránka úkolů** – kopírovat / vyjmout / vložit (`Ctrl+C` / `X` / `V`) včetně celého podstromu; pravým tlačítkem kontextové menu.
 - 📥 **Vložení z textu** (`Ctrl+Shift+V`) – odsazený text ze schránky se převede na strukturu úkolů; dialog se zeptá kam (pod / za aktuální / na konec).
+- 📧 **Úkoly z e-mailu** (`Ctrl+Shift+M`, menu *Soubor*) – nepřečtené zprávy ze schránky (IMAP, výchozí `dapar777_taskmaster@seznam.cz`) se stanou úkoly v kořenové sekci **`_INBOX`** (založí se, když chybí): předmět = název, odesílatel + datum + text = popis (HTML se převede na markdown), **přílohy** se uloží do složky úkolu a přidají mezi odkazy. Zpráva se ve schránce označí jako přečtená; Message-ID v `_mail_id` brání duplicitám. Volitelně **automatická kontrola** v intervalu. Viz [Úkoly z e-mailu](#úkoly-z-e-mailu).
 - ➕ **Nový úkol** (`Ctrl+N`) vzniká jako **sourozenec** aktuálního, **podúkol** (`Ctrl+Shift+N`) pod aktuálním – přes **dialog s metadaty** (i s klávesovými zkratkami `Ctrl+T` / `Ctrl+↑↓`); kategorie a priorita se **dědí** od nadřazeného úkolu. Zařazení do pořadí respektuje zobrazení:
   - **strom** – nový úkol hned **za** aktuální; podúkol **na konec** seznamu podúkolů daného úkolu (i těch neviditelných);
   - **seznam / Bez rušení** – nový úkol **pod** aktuální; podúkol **za poslední** viditelný podúkol daného úkolu, a nejsou-li žádné ve výběru, **hned nad** aktuální úkol.
@@ -113,7 +114,8 @@ _order: 0               # vlastní pořadí (float, globálně jedinečné)
 _flag: false            # vlaječka (Ctrl+T)
 _blocked_by: ''         # _id blokujícího úkolu (jen ve stavu blocked)
 _auto_blocked: false    # true = blokováno automaticky podle stavu podúkolů
-_links:                 # přetažené soubory jako odkazy (necopírují se)
+_links:                 # přetažené soubory jako odkazy (nekopírují se); relativní path = příloha
+                        #   uložená ve složce úkolu (import z e-mailu, Android klient)
   - name: smlouva.pdf
     path: C:/Users/.../smlouva.pdf
     added: 2026-06-24T14:05:00
@@ -186,6 +188,7 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+Shift+B` | Zablokovat sourozence (i s podúkoly) | kdekoli |
 | `Ctrl+S` / `F5` | Uložit / obnovit | kdekoli |
 | `Ctrl+O` | Otevřít prostor | kdekoli |
+| `Ctrl+Shift+M` | Načíst úkoly z e-mailu (sekce `_INBOX`) | kdekoli |
 | `Ctrl+L` | Cyklit zobrazení (strom→seznam→karty) | kdekoli |
 | `Ctrl+Shift+D` | Režim Bez rušení (karty) | kdekoli |
 | `Ctrl+Shift+E` | Úsporné karty (nižší mimo Probíhá/Ke zpracování) | kdekoli |
@@ -225,6 +228,34 @@ Menu **Filtry**:
 - Uložené filtry se objeví v menu *Filtry* (a po přiřazení fungují i přes zkratku).
 
 Presety se ukládají do `%LOCALAPPDATA%\TaskMaster\Task Master\filters.json`.
+
+## Úkoly z e-mailu
+
+Menu **Soubor → Načíst úkoly z e-mailu** (`Ctrl+Shift+M`) se připojí ke schránce
+přes IMAP, vezme **nepřečtené** zprávy a z každé založí úkol pod kořenovou sekcí
+**`_INBOX`** (vznikne s první zprávou; existující `_Inbox` v libovolné velikosti
+písmen se použije). Sekce začínající `_` nedědí metadata, úkoly tedy mají
+výchozí prioritu.
+
+- **Název** = předmět (`(bez předmětu)`, když chybí).
+- **Popis** = `**Od:** odesílatel`, `**Datum:** čas` a text zprávy – přednost má
+  `text/plain`, jinak se HTML převede na markdown (`app/htmlmd.py`).
+- **Přílohy** (i vložené obrázky) se uloží do složky úkolu pod bezpečným názvem
+  (kolize → `_2`, `_3`…) a přidají do odkazů s **relativní cestou** – stejně jako
+  přílohy z Android klienta, takže fungují v obou aplikacích i po synchronizaci.
+- Zpracovaná zpráva se na serveru **označí jako přečtená**; Message-ID se uloží do
+  metadat jako `_mail_id`, takže se stejný e-mail nikdy nezaloží dvakrát (ani po
+  ručním „označit jako nepřečtené", ani když stejný prostor sdílí desktop
+  s Androidem). Import lze vrátit `Ctrl+Z`.
+- Síť běží ve vlákně, okno nezamrzne; průběh a výsledek hlásí stavový řádek.
+
+**Nastavení e-mailu…** (menu *Soubor*): server (výchozí `imap.seznam.cz`, port 993,
+SSL), přihlašovací jméno (výchozí `dapar777_taskmaster@seznam.cz`), heslo, složka
+(`INBOX`) a interval **automatické kontroly** v minutách (0 = vypnuto). Tlačítko
+*Otestovat připojení* ověří přihlášení a spočítá nepřečtené zprávy. Heslo se
+ukládá do **Správce pověření Windows** (položka `TaskMaster/mail`), ostatní
+do nastavení aplikace. Ve schránce na Seznamu musí být IMAP povolený
+(Nastavení → Přístup z jiných aplikací).
 
 ## Výkon
 
@@ -343,3 +374,4 @@ výběr a pohled**:
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
 | `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |
 | `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
+| `test_mail_import.py` | e-mail → úkoly: parsování zpráv (RFC 2047, HTML → markdown, přílohy), sekce `_INBOX` (vznik, opětovné použití, `_Inbox`), přílohy s relativní cestou, duplicity podle `_mail_id`, nastavení, průchod `MainWindow` s falešnou schránkou (vlákna, označení jako přečtené, aktivní úkol, chyba, timer, undo) |

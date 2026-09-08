@@ -412,7 +412,7 @@ class TaskDetailPanel(QWidget):
             return
         t = theme.current()
         for link in self.node.links:
-            path = link.get("path", "")
+            path = self.node.link_path(link)
             exists = os.path.exists(path)
             item = QListWidgetItem(link.get("name", path))
             item.setIcon(icons.icon("file" if exists else "warning", theme.px(14),

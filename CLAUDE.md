@@ -93,6 +93,20 @@ Hledání na kořeni prochází i listy podúrovní (`_deep_entries`, hloubka 3)
 `deleted`) místo kopie workspace; `snapshot` je jen fallback. Před operací,
 která mění metadata více uzlů, ulož je přes `undo.push_fields(...)`.
 
+**`app/mailimport.py`** – úkoly z e-mailu (IMAP) do kořenové sekce `_INBOX`
+(`find_inbox` bere i `_Inbox`). Síť (`ImapMailbox`, `fetch_unseen`, `finish`)
+běží v `MailWorker` (QThread), úkoly zakládá **hlavní vlákno** přes
+`import_messages(workspace, messages)` – strom není thread-safe. Dvě fáze:
+stáhnout → založit → teprve pak označit jako přečtené (schránka zůstává mezi
+fázemi otevřená). Message-ID jde do meta `_mail_id` (dedup napříč celým
+prostorem, Android ho zachová); přílohy do adresáře úkolu s **relativní**
+`_links.path` – `TaskNode.link_path()` ji řeší vůči adresáři úkolu (detail,
+paleta), absolutní cesty a URI nechává. HTML těla převádí `app/htmlmd.py`
+(vlastní převodník; `QTextDocument.toMarkdown` v offscreen testech ztrácí
+tučné). Heslo je ve Správci pověření (pywin32 `win32cred`, fallback QSettings);
+testy používají `MailSettings.load/save(..., secure=False)` a místo sítě
+monkeypatchují `mailimport.fetch_unseen` (vzor `tests/test_mail_import.py`).
+
 **Ikona a hlavní panel** – ikona je ze sady Terakota (`assets/icons/task-master-{light,dark}.ico`,
 `app/appicon.py`). Python z Microsoft Store je MSIX balíček a Windows v hlavním panelu ukazuje
 logo balíčku (Python) místo ikony okna; `MainWindow.showEvent` a `_retheme_header` proto volají

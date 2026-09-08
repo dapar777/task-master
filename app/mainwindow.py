@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import appicon, icons, theme
+from . import appicon, icons, mailimport, theme
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import RECENT_MAX, CommandPalette
@@ -44,6 +44,7 @@ from .constants import (
 )
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
+from .maildialog import MailSettingsDialog
 from .savedfilters import FilterStore, SavedFilter
 from .savedfiltersdialog import SavedFiltersDialog
 from .shortcutdialog import ShortcutDialog
@@ -107,6 +108,14 @@ class MainWindow(QMainWindow):
         self.shortcuts = ShortcutManager(cfg_dir / "shortcuts.json")
         self.filter_store = FilterStore(cfg_dir / "filters.json")
         self._filter_actions: list[QAction] = []
+
+        # načítání úkolů z e-mailu: síť běží ve vlákně (_mail_worker), úkoly
+        # se zakládají tady; volitelně periodicky (_mail_timer)
+        self.mail_settings = mailimport.MailSettings.load(self.settings)
+        self._mail_worker: mailimport.MailWorker | None = None
+        self._mail_timer = QTimer(self)
+        self._mail_timer.timeout.connect(self._import_mail_auto)
+        self._apply_mail_timer()
 
         # zoom: první krok (kolečko/zkratka) se provede hned, další, které
         # přijdou během čerstvého přestylování, se slijí do jednoho pozdějšího
@@ -513,6 +522,9 @@ class MainWindow(QMainWindow):
         self._make("app.shortcuts", self._open_shortcuts)
         self._make("app.command_palette", self._open_command_palette)
         self._make("app.stats", self._open_stats)
+        # e-mail -> úkoly do sekce _INBOX
+        self._make("mail.import", self._import_mail)
+        self._make("mail.settings", self._open_mail_settings)
         # Filtry
         self._make("filter.save", self._save_current_filter)
         self._make("filter.manage", self._manage_filters)
@@ -565,6 +577,7 @@ class MainWindow(QMainWindow):
         "task.make_sequence": "link", "edit.undo": "undo",
         "app.open_workspace": "folder", "app.save": "save", "app.refresh": "rotate",
         "app.stats": "chart", "app.command_palette": "command", "app.shortcuts": "keyboard",
+        "mail.import": "mail", "mail.settings": "sliders",
         "view.tree": "tree", "view.list": "list", "view.cards": "cards",
         "view.compact_cards": "sliders", "view.dark_theme": "moon",
         "view.zoom_in": "zoom_in", "view.zoom_out": "zoom_out", "view.zoom_reset": "rotate",
@@ -593,6 +606,9 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act["edit.undo"])
         m_file.addAction(self.act["app.save"])
         m_file.addAction(self.act["app.refresh"])
+        m_file.addSeparator()
+        m_file.addAction(self.act["mail.import"])
+        m_file.addAction(self.act["mail.settings"])
         m_file.addSeparator()
         quit_act = QAction("Konec", self)  # bez zkratky (Ctrl+Q používá přesun v pořadí)
         quit_act.triggered.connect(self.close)
@@ -924,8 +940,8 @@ class MainWindow(QMainWindow):
         def link_children() -> list[dict]:
             links = node.links if node is not None else []
             return ([e("Soubor", lk.get("name") or str(lk.get("path")),
-                       lambda p=lk.get("path"): QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))),
-                       icon="file", tooltip=str(lk.get("path", "")))
+                       lambda p=node.link_path(lk): QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))),
+                       icon="file", tooltip=node.link_path(lk))
                      for lk in links]
                     or [e("Soubor", "(aktuální úkol nemá odkazy na soubory)")])
 
@@ -997,7 +1013,8 @@ class MainWindow(QMainWindow):
             a("app.open_workspace"),
             e("Prostor", "Otevřít složku prostoru v Průzkumníku", lambda: open_folder(ws.root if ws else None), icon="folder"),
             e("Prostor", "Kopírovat cestu k prostoru", lambda: copy(str(ws.root) if ws else ""), icon="clipboard"),
-            a("app.save"), a("app.refresh"), a("app.stats"), a("app.shortcuts"),
+            a("app.save"), a("app.refresh"), a("mail.import"), a("mail.settings"),
+            a("app.stats"), a("app.shortcuts"),
             e("Aplikace", "Konec", self.close),
         ]
         # stavy mají vlastní podúroveň; zbylé akce (editor apod.) doplň automaticky,
@@ -2814,6 +2831,92 @@ class MainWindow(QMainWindow):
         self.status.showMessage("Uloženo", 1500)
 
     # ------------------------------------------------------------------
+    # E-mail -> úkoly (sekce _INBOX)
+    # ------------------------------------------------------------------
+    def _open_mail_settings(self) -> bool:
+        vals = MailSettingsDialog.get(self, self.mail_settings)
+        if vals is None:
+            return False
+        self.mail_settings = vals
+        vals.save(self.settings)
+        self._apply_mail_timer()
+        return True
+
+    def _apply_mail_timer(self) -> None:
+        minutes = int(self.mail_settings.interval_min or 0)
+        if minutes > 0 and self.mail_settings.complete:
+            self._mail_timer.start(minutes * 60 * 1000)
+        else:
+            self._mail_timer.stop()
+
+    def _import_mail(self) -> None:
+        self._start_mail_import(auto=False)
+
+    def _import_mail_auto(self) -> None:
+        self._start_mail_import(auto=True)
+
+    def _start_mail_import(self, auto: bool) -> None:
+        """Stáhne nepřečtené zprávy ve vlákně; úkoly založí _on_mail_fetched.
+
+        `auto` = periodická kontrola: bez dialogů (chyby jen do stavového řádku).
+        """
+        if not self.workspace:
+            return
+        if self._mail_worker is not None:
+            if not auto:
+                self.status.showMessage("Načítání e-mailů už běží…", 2000)
+            return
+        if not self.mail_settings.complete:
+            if auto or not self._open_mail_settings() or not self.mail_settings.complete:
+                return
+        self.status.showMessage("Načítám e-maily…")
+        w = mailimport.MailWorker(mailimport.fetch_unseen, self.mail_settings, parent=self)
+        w.done.connect(lambda res, err, auto=auto: self._on_mail_fetched(res, err, auto))
+        w.finished.connect(w.deleteLater)
+        self._mail_worker = w
+        w.start()
+
+    def _on_mail_fetched(self, res, err, auto: bool) -> None:
+        self._mail_worker = None
+        if err:
+            self.status.showMessage(f"E-mail: {err}", 8000)
+            if not auto:
+                QMessageBox.warning(self, "Načíst úkoly z e-mailu", err)
+            return
+        box, messages = res
+        result = None
+        if messages and self.workspace:
+            self.detail.commit()
+            self.detail.discard()
+            result = mailimport.import_messages(self.workspace, messages)
+            ids = [n.task_id for _, n in result.created]
+            if ids:
+                self.undo.push_created(ids)
+                first = result.created[0][1]
+                self._current_node = first  # aktivní -> zobrazí se i mimo filtr
+                self._populate()
+                self._select_path_in_view(str(first.path))
+        n_new = len(result.created) if result else 0
+        n_dup = len(result.duplicates) if result else 0
+        if n_new:
+            text = f"Načteno úkolů z e-mailu: {n_new}" + (f" (už importovaných: {n_dup})" if n_dup else "")
+        elif n_dup:
+            text = f"Žádné nové e-maily (už importovaných: {n_dup})"
+        else:
+            text = "Žádné nové e-maily"
+        uids = result.processed_uids if result else []
+        # označení jako přečtené a zavření schránky – opět síť, opět vlákno
+        w = mailimport.MailWorker(mailimport.finish, box, uids, parent=self)
+        w.done.connect(lambda _r, e, text=text: self._on_mail_finished(e, text))
+        w.finished.connect(w.deleteLater)
+        self._mail_worker = w
+        w.start()
+
+    def _on_mail_finished(self, err, text: str) -> None:
+        self._mail_worker = None
+        self.status.showMessage(text if not err else f"{text} – {err}", 8000)
+
+    # ------------------------------------------------------------------
     # Stav okna
     # ------------------------------------------------------------------
     def _restore_geometry(self) -> None:
@@ -2848,6 +2951,10 @@ class MainWindow(QMainWindow):
                                              max(1, self.height() * 2 // 3)])
 
     def closeEvent(self, event) -> None:
+        self._mail_timer.stop()
+        w = self._mail_worker
+        if w is not None and w.isRunning():
+            w.wait(3000)  # vlákno nesmí přežít okno
         self.detail.commit()
         self._save_state()
         self.settings.setValue("geometry", self.saveGeometry())

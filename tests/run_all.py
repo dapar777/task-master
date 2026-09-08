@@ -30,6 +30,7 @@ TESTS = [
     ("test_theme.py", "téma: barvy jen v theme.py, karty a strom v obou tématech, přepínač"),
     ("test_zoom.py", "zoom UI: px/pt/QSS, zkratky, kolečko, nastavení; tlačítko tématu v hlavičce"),
     ("test_palette.py", "příkazová paleta: úrovně, hluboké hledání, naposledy použité, úkoly, úplnost"),
+    ("test_mail_import.py", "e-mail -> úkoly: parsování, sekce _INBOX, přílohy, duplicity, průchod oknem"),
 ]
 
 
