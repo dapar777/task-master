@@ -31,6 +31,7 @@ TESTS = [
     ("test_zoom.py", "zoom UI: px/pt/QSS, zkratky, kolečko, nastavení; tlačítko tématu v hlavičce"),
     ("test_palette.py", "příkazová paleta: úrovně, hluboké hledání, naposledy použité, úkoly, úplnost"),
     ("test_mail_import.py", "e-mail -> úkoly: parsování, sekce _INBOX, přílohy, duplicity, průchod oknem"),
+    ("test_drag_focus.py", "tažení ven z aplikace: cíl smí převzít popředí (AllowSetForegroundWindow)"),
 ]
 
 

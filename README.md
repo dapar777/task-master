@@ -38,7 +38,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - ↩️ **Undo** (`Ctrl+Z`) – vrátí poslední změnu (vytvoření, smazání, přejmenování, přesun, pořadí, vložení, stav, prioritu, vlaječku).
 - 📎 **Drag & drop souborů** – přetažením na úkol se přidá jako **odkaz** (soubor se nekopíruje).
 - 🔗 **Odkazy mezi úkoly** – cross-reference podle stabilního ID; přežijí přejmenování i přesun.
-- 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí.
+- 🔀 **Přesun / pořadí přetažením** – drop **na** úkol vnoří, drop **mezi** úkoly mění vlastní pořadí. Tažení ven (do Total Commanderu apod.) nezasekne aplikaci: cílový program si smí pro svůj dotaz vzít popředí, takže Enter dorazí jemu (`app/winutil.py`).
 - 👁 **Tři režimy zobrazení**: **strom**, **seznam** a **Bez rušení** (karty přes celou šířku okna, výška se přizpůsobí zalomenému názvu; po najetí na kartu se v plovoucím okénku ukáže text úkolu). Pohled skočí na první úkol a odroluje nahoru **jen v Bez rušení, a jen když změna stavu odsune právě aktivní kartu do nižší skupiny** – tehdy by pod kurzorem nic smysluplného nezůstalo. Změna stavu jiné karty, editace názvu, změna metadat ani přidání úkolu pohledem nehýbou; ve stromu a seznamu výběr zůstává na místě vždy. Pozadí karty je **obarvené podle stavu vlevo a priority vpravo** (plynulý přechod, poměr 3:1); úkol s nedokončenými podúkoly nese decentní odznak `↳ N`, úkol s **neprázdným popisem** značku `📝`. Pravým tlačítkem se na kartě otevře **kontextové menu** (mj. *Otevřít v editoru*, kopírovat, přejmenovat, smazat, přepnout hotovo…).
 - 🌳 **Stabilní strom** – ručně **sbalené větve zůstanou sbalené** i po změně stavu, přidání úkolu nebo jiné akci (nové úkoly jsou výchozí rozbalené); zachová se i **pozice rolování**, takže pohled neposkočí. Sbalení přežije i přepnutí do seznamu a zpět. Výjimka: úkol vybraný **pod** sbaleným rodičem (např. nově vytvořený podúkol) rodiče rozbalí, aby byl vidět.
 - 🧩 **Podúkoly nad rodičem** – v **seznamu i Bez rušení** stojí podúkoly nad svým nadřazeným úkolem; každý rodič si drží souvislý blok, hlouběji vnořené jsou výš.
@@ -330,6 +330,7 @@ app/
   savedfilters.py       SavedFilter + FilterStore (presety v JSON)
   savedfiltersdialog.py dialog pro správu uložených filtrů
   appicon.py            ikona aplikace ze sady Terakota (assets/icons) + identita v hlavním panelu (pywin32)
+  winutil.py            Windows: svolení k převzetí popředí cílem tažení (AllowSetForegroundWindow)
   mainwindow.py         MainWindow – menu, kontextové menu, navigace, propojení
 tests/                  headless testy chování stromu a karet (viz níže)
 run.vbs / run.bat       spuštění na Windows bez konzolového okna
@@ -360,6 +361,7 @@ výběr a pohled**:
 | `test_tree_state.py` | sbalené větve a pozice rolování přežijí přebudování, přejmenování i přesun |
 | `test_status_focus.py` | změna stavu ve stromu **nepřehodí výběr** na první úkol; v Bez rušení jen při odsunu aktivní karty |
 | `test_reparent_rename.py` | drag & drop a `F2` přes `MainWindow` nerozbalí cizí větve |
+| `test_drag_focus.py` | levý stisk myši kdekoli v okně svolí cíli tažení převzít popředí (`winutil`) |
 | `test_cards_scroll.py` | Bez rušení: pohled skáče nahoru **jen** při odsunu aktivní karty |
 | `test_block_siblings.py` | blokování sourozenců i s podstromy; výjimky, undo, odblokování |
 | `test_cards_recycle.py` | recyklace karet **nezobrazuje zastaralý** obsah |

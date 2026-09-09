@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import appicon, icons, mailimport, theme
+from . import appicon, icons, mailimport, theme, winutil
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import RECENT_MAX, CommandPalette
@@ -739,6 +739,10 @@ class MainWindow(QMainWindow):
         self.zoom_label.setVisible(bool(self.zoom_label.text()))
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            # každý stisk může začít tažení ven z aplikace – cíl (Total Commander…)
+            # si pak smí vzít popředí pro svůj dialog, jinak tažení „visí“ (winutil)
+            winutil.allow_foreground_change()
         if event.type() == QEvent.Type.Wheel and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             delta = event.angleDelta().y()
             if delta:

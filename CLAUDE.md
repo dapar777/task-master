@@ -115,6 +115,12 @@ logo balíčku (Python) místo ikony okna; `MainWindow.showEvent` a `_retheme_he
 `appicon.apply_taskbar_identity()`, které zapíše AppUserModel vlastnosti na HWND přes pywin32
 `propsys` (bez pywin32 se tiše přeskočí, ikona okna zůstane).
 
+**Tažení ven z aplikace** – na Windows je zdroj tažení během `DoDragDrop` zablokovaný, dokud cíl
+nevrátí `Drop()`; když si cíl (Total Commander) otevře dotaz Ano/Ne, bez svolení zdroje nedostane
+popředí a Enter padá do Task Masteru. `MainWindow.eventFilter` proto při každém levém stisku myši
+volá `winutil.allow_foreground_change()` (`AllowSetForegroundWindow(ASFW_ANY)`, `app/winutil.py`);
+`tests/test_drag_focus.py` hlídá, že se volá. Nový zdroj tažení tedy nic dalšího nepotřebuje.
+
 **Vzhled** – `app/theme.py` je jediný zdroj barev (Solarized, světlé/tmavé
 tokeny `Tokens`, `status_style()`, `priority_style()`, `title_font()`, QSS).
 Nikde jinde hex barvy nepiš (`tests/test_theme.py` to hlídá; výjimka je
