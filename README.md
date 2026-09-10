@@ -48,6 +48,15 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 🔢 **Priorita 1–10** (10 = nejvyšší, barevně od zelené po červenou), změna z klávesnice (`Ctrl+↑` / `Ctrl+↓`).
 - ↕️ **Vlastní pořadí** – přesun (`Ctrl+W` / `Ctrl+Q`) i tažením; pořadí je `float` (vždy lze vložit mezi). Při přepnutí na „Vlastní pořadí" se převezme aktuální uspořádání.
 - 🚩 **Vlaječka** (`_flag`) – rychlé označení, přepínání `Ctrl+T`; lze podle ní i filtrovat.
+- 🔍 **Hledání** – pole v hlavičce hledá v názvu, ale umí víc:
+  - **víc slov** = musí sedět všechna, v libovolném pořadí (`nákup chléb`),
+  - **`/` na začátku** hledá v celé **cestě** úkolu včetně názvu – `/nákup jídlo` najde
+    *Práce / Nákup / Jídlo*, i když obě slova nejsou v samotném názvu,
+  - **regulární výraz** se pozná sám (`^Nákup.*mléko$`, `(mléko|chléb)`); detekce je záměrně
+    úzká, takže „verze 1.2“ ani „koupit?“ vzor nespustí,
+  - **bez diakritiky** a bez ohledu na velikost písmen (`jidlo` najde `Jídlo`),
+  - **historie** dotazů žije v prostoru (`_state.yaml`, sdílí se s Androidem) a pole ji nabízí
+    jako našeptávání. Pravidla jsou v `app/search.py`, stejně je používá i příkazová paleta.
 - 🔎 **Filtrování** – defaultně jen výběr uloženého filtru, **kritéria po rozkliknutí**. Stav/kategorie/tag jsou **multi-select**, priorita **rozmezí od–do**, plus filtr podle vlaječky. Po změně filtru se vybere první vyhovující úkol.
 - 💾 **Uložené filtry (presety)** – pamatují podmínky, zobrazení i řazení; lze přiřadit **vlastní zkratku**.
 - 📌 **Aktivní úkol zůstává vidět** – nově vytvořený nebo právě upravený úkol, který nevyhovuje filtru, zůstane zobrazený, dokud je aktivní (po opuštění zmizí). Změna filtru naopak přepne na první vyhovující.
@@ -372,6 +381,7 @@ výběr a pohled**:
 | `test_status_menu.py` | stav jde nastavit z menu i v Bez rušení |
 | `test_sequence.py` | sekvence: řetěz blokování, dialog, postupné odemykání |
 | `test_snooze.py` | odklad: odpočet, obnovení, řazení doběhlých nahoru |
+| `test_search.py` | hledání: cesta (`/`), víc slov, vzory, diakritika, historie |
 | `test_context_key.py` | klávesa kontextového menu ve stromu, seznamu i kartách |
 | `test_order_unique.py` | pořadí nového úkolu je **globálně** jedinečné (i vůči skrytým); `normalize_orders()` nepřepisuje strom |
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |

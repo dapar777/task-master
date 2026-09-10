@@ -7,13 +7,14 @@ Výčtové vlastnosti lze zaškrtnout pro víc hodnot, priorita je rozmezí.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QStringListModel, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QCompleter,
     QLineEdit,
     QPushButton,
     QSpinBox,
@@ -23,7 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from .constants import PRIORITIES, SORT_OPTIONS, STATUSES
-from . import theme
+from . import search, theme
+from .tasktree import breadcrumb
 from .widgets import SectionLabel
 
 DATA_ROLE = Qt.ItemDataRole.UserRole
@@ -124,8 +126,25 @@ class FilterPanel(QWidget):
 
         # --- kritéria ---
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("hledat v názvu…")
+        self.name_edit.setPlaceholderText("hledat v názvu, „/“ = v celé cestě…")
+        self.name_edit.setToolTip(
+            "Hledání v názvu úkolu.\n"
+            "• víc slov = musí sedět všechna (v libovolném pořadí)\n"
+            "• „/“ na začátku hledá v celé cestě: /nákup jídlo\n"
+            "• vzor se pozná sám: ^Nákup.*mléko$, (mléko|chléb)\n"
+            "• na diakritice a velikosti písmen nezáleží\n"
+            "Šipka dolů nabídne dřívější hledání."
+        )
         self.name_edit.setClearButtonEnabled(True)
+        # historie hledání – žije v prostoru (_state.yaml), doplňuje MainWindow
+        self._history: list[str] = []
+        self._completer_model = QStringListModel(self)
+        completer = QCompleter(self._completer_model, self)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.name_edit.setCompleter(completer)
+        self.name_edit.textEdited.connect(self._refresh_suggestions)
 
         self.status_box = CheckableComboBox()
         for key, label in STATUSES.items():
@@ -234,6 +253,31 @@ class FilterPanel(QWidget):
         self._set_saved_silent("")  # ruční změna -> „vlastní"
         self.filtersChanged.emit()
 
+    # ----- historie hledání -----
+
+    def set_history(self, history) -> None:
+        """Nastaví historii načtenou z prostoru (_state.yaml)."""
+        self._history = [h for h in (history or []) if isinstance(h, str) and h.strip()]
+        self._refresh_suggestions(self.name_edit.text())
+
+    def history(self) -> list[str]:
+        return list(self._history)
+
+    def remember_search(self) -> bool:
+        """Zapíše aktuální dotaz do historie. Vrací True, když se něco změnilo."""
+        before = self._history
+        after = search.push_history(before, self.name_edit.text())
+        if after == before:
+            return False
+        self._history = after
+        return True
+
+    def _refresh_suggestions(self, text: str = "") -> None:
+        """Naplní našeptávač návrhy z historie pro rozepsaný text."""
+        model = getattr(self, "_completer_model", None)
+        if model is not None:
+            model.setStringList(search.suggest(self._history, text))
+
     def _on_prio_changed(self) -> None:
         if self.prio_min.value() > self.prio_max.value():
             sender = self.sender()
@@ -319,7 +363,9 @@ class FilterPanel(QWidget):
     # ------------------------------------------------------------------
     def current_filters(self) -> dict:
         return {
-            "name": self.name_edit.text().strip().lower(),
+            # bez .lower(): rozbor dotazu (prefix /, vzor, diakritika) dělá
+            # search.parse(); skládání textu je až v SearchQuery.matches
+            "name": self.name_edit.text().strip(),
             "statuses": self.status_box.checked_data(),
             "priority_min": self.prio_min.value(),
             "priority_max": self.prio_max.value(),
@@ -349,13 +395,19 @@ class FilterPanel(QWidget):
         znovu a čas rostl s celkovým počtem úkolů, ne s počtem viditelných.
         """
         f = self.current_filters()
-        return lambda node: self.matches(node, f)
+        # dotaz rozeber jednou; v matches() by se překládal pro každý úkol znovu
+        q = search.parse(f["name"])
+        return lambda node: self.matches(node, f, q)
 
-    def matches(self, node, filters: dict | None = None) -> bool:
+    def matches(self, node, filters: dict | None = None, query=None) -> bool:
         f = filters if filters is not None else self.current_filters()
         meta = node.meta
-        if f["name"] and f["name"] not in node.title.lower():
-            return False
+        q = query if query is not None else search.parse(f["name"])
+        if not q.empty:
+            # breadcrumb() prochází rodiče, takže ho stavíme jen pro dotaz na cestu
+            path = breadcrumb(node) if q.in_path else ""
+            if not q.matches(node.title, path):
+                return False
         if f["statuses"] and not self._status_matches(node, f["statuses"]):
             return False
         try:

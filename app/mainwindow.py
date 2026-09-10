@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import appicon, icons, mailimport, theme, winutil
+from . import appicon, icons, mailimport, search, theme, winutil
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import RECENT_MAX, CommandPalette
@@ -163,6 +163,10 @@ class MainWindow(QMainWindow):
         # levý panel
         self.filter_panel = FilterPanel()
         self.filter_panel.filtersChanged.connect(self._on_filter_changed)
+        # dotaz do historie až při potvrzení / opuštění pole – jinak by se
+        # ukládaly i nedopsané útržky z každého úhozu
+        self.filter_panel.name_edit.editingFinished.connect(self._remember_search)
+        self.filter_panel.name_edit.returnPressed.connect(self._remember_search)
         self.filter_panel.sortChanged.connect(self._on_sort_changed)
         self.filter_panel.savedFilterSelected.connect(self._apply_saved_filter_by_id)
 
@@ -418,7 +422,8 @@ class MainWindow(QMainWindow):
             chips.append(Chip(self.filter_panel.saved_combo.currentText(), t.accent_hover,
                               theme.mix(t.accent, t.paper, 0.12), icon="bookmark"))
         if f["name"]:
-            chips.append(Chip(f"„{f['name']}“", t.text2, t.panel, icon="search"))
+            # popis říká, CO se hledá: název / cesta / vzor (viz app/search.py)
+            chips.append(Chip(search.describe(f["name"]), t.text2, t.panel, icon="search"))
         if f["statuses"]:
             chips.append(Chip("Stav: " + ", ".join(STATUSES.get(s, s) for s in f["statuses"]),
                               t.text2, t.panel))
@@ -1052,10 +1057,17 @@ class MainWindow(QMainWindow):
         """Úkoly, jejichž cesta (drobečky) obsahuje všechna slova dotazu."""
         if not self.workspace or not q.strip():
             return []
-        toks = q.lower().split()
+        # stejná pravidla jako filtr (víc slov, vzor, bez diakritiky) – paleta
+        # hledá vždy v celé cestě, prefix „/“ tu tedy není potřeba
+        query = search.parse(q)
+        if query.empty:
+            return []
         hits = [n for n in self.workspace.all_nodes()
-                if all(t in breadcrumb(n).lower() for t in toks)]
-        hits.sort(key=lambda n: (not n.title.lower().startswith(toks[0]), n.title.lower()))
+                if query.matches(n.title, breadcrumb(n))]
+        first = search.fold(q.strip().lstrip(search.PATH_PREFIX).strip()).split()
+        head = first[0] if first else ""
+        hits.sort(key=lambda n: (not search.fold(n.title).startswith(head),
+                                 search.fold(n.title)))
         return [self._palette_task_entry(n, "Úkol") for n in hits[:limit]]
 
     def _palette_set_sort(self, key: str, desc: bool) -> None:
@@ -1172,6 +1184,7 @@ class MainWindow(QMainWindow):
     def _restore_state(self) -> None:
         """Obnoví stav uložený v rootu workspace: filtr, zobrazení, aktivní úkol."""
         state = self.workspace.load_state() if self.workspace else {}
+        self.filter_panel.set_history(state.get(search.HISTORY_KEY) or [])
         f = state.get("_filter") or {}
         if f:
             self.filter_panel.apply_preset(f)
@@ -1198,6 +1211,7 @@ class MainWindow(QMainWindow):
             "_active": self._current_node.meta.get("_id") if self._current_node else None,
             "_view": self._view_mode,
             "_filter": self.filter_panel.export_preset(),
+            search.HISTORY_KEY: self.filter_panel.history(),
         })
         self.workspace.save_state(state)
 
@@ -1346,6 +1360,11 @@ class MainWindow(QMainWindow):
         self._populate()
         self._ensure_current_visible()
         self._schedule_state_save()
+
+    def _remember_search(self) -> None:
+        """Zapamatuje dotaz v prostoru (sdílí se s Androidem přes _state.yaml)."""
+        if self.filter_panel.remember_search():
+            self._schedule_state_save()
 
     def _ensure_current_visible(self) -> None:
         """Po změně filtru zajisti, že je vždy vybraný (zvýrazněný) nějaký úkol.
