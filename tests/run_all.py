@@ -23,6 +23,7 @@ TESTS = [
     ("test_dialogs_filters.py", "dialogy a uložené filtry"),
     ("test_search.py", "hledání: cesta (/), víc slov, vzory, diakritika, historie"),
     ("test_settings.py", "nastavení: jeden dialog (sekce), aplikace hodnot, přepínání z palety"),
+    ("test_startup.py", "start: nedostupný prostor -> náhradní, excepthook -> crash.log + dialog"),
     ("test_undo_ops.py", "undo strukturálních operací bez snapshotu"),
     ("test_status_menu.py", "nastavení stavu z kontextového menu"),
     ("test_sequence.py", "sekvence úkolů: řetěz blokování + dialog"),

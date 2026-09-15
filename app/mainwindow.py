@@ -1256,7 +1256,27 @@ class MainWindow(QMainWindow):
     def _open_initial_workspace(self) -> None:
         saved = self.settings.value("workspace", "", type=str)
         path = Path(saved) if saved else self._default_workspace()
-        self._set_workspace(path, create_samples=not saved)
+        try:
+            self._set_workspace(path, create_samples=not saved)
+            return
+        except OSError as e:
+            # typicky odpojený cloudový/síťový disk (Google Drive) – bez tohohle by
+            # okno vůbec nevzniklo a bez konzole by se „nic nestalo“
+            err = e
+        QMessageBox.warning(
+            self, "Prostor nejde otevřít",
+            f"Pracovní prostor se nepodařilo otevřít:\n{path}\n\n{err}\n\n"
+            "Zkontroluj, že je disk připojený (např. Google Drive), nebo zvol jiný prostor. "
+            "Bez volby se otevře výchozí místní prostor; uložená cesta zůstane a zkusí se "
+            "při příštím startu znovu.",
+        )
+        chosen = QFileDialog.getExistingDirectory(self, "Vyber pracovní prostor",
+                                                  str(self._default_workspace()))
+        if chosen:
+            self._set_workspace(Path(chosen))
+            return
+        self._set_workspace(self._default_workspace(), remember=False)
+        self.status.showMessage(f"Prostor {path} nejde otevřít – otevřen výchozí místní prostor", 8000)
 
     def _choose_workspace(self) -> None:
         start = str(self.workspace.root) if self.workspace else str(self._default_workspace())
@@ -1264,7 +1284,8 @@ class MainWindow(QMainWindow):
         if chosen:
             self._set_workspace(Path(chosen))
 
-    def _set_workspace(self, path: Path, create_samples: bool = False) -> None:
+    def _set_workspace(self, path: Path, create_samples: bool = False, remember: bool = True) -> None:
+        """Otevře prostor; `remember=False` = náhradní prostor, uložená cesta zůstane."""
         self.detail.discard()
         self.detail.load(None)
         self._current_node = None
@@ -1277,7 +1298,8 @@ class MainWindow(QMainWindow):
         if not roots and create_samples:
             self._create_samples()
             self.workspace.load()
-        self.settings.setValue("workspace", str(path))
+        if remember:
+            self.settings.setValue("workspace", str(path))
         self.ws_label.setText(f"Prostor: {path}")
         self.header_ws.setText(str(path))
         self.header_ws.setToolTip(str(path))

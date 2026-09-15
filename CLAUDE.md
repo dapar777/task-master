@@ -89,6 +89,12 @@ QSettings `palette_recent` jako cesty popisků oddělené `|` – **přejmenová
 popisku** starý záznam tiše zahodí, popisky na kořeni musí být jedinečné.
 Hledání na kořeni prochází i listy podúrovní (`_deep_entries`, hloubka 3).
 
+**Start bez konzole** – `main.py` instaluje `sys.excepthook` (`crash.log` v adresáři
+konfigurace + `QMessageBox.critical`), jinak by pád pod `pythonw` zmizel beze stopy
+(„run.bat proběhne a nic se nestane“). `_open_initial_workspace` chytá `OSError`
+(odpojený Google Drive): varování → volba jiného prostoru → jinak výchozí místní přes
+`_set_workspace(..., remember=False)`, aby uložená cesta zůstala. `tests/test_startup.py`.
+
 **Nastavení** – jedno okno `app/settingsdialog.py` (`SettingsDialog`; sekce Vzhled,
 Prostor, Odklad, E-mail, Zkratky, Ostatní). Dialog **nic neaplikuje sám**, jen vrátí
 `values()`; promítá je `MainWindow._apply_settings` přes existující akce

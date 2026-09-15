@@ -154,6 +154,12 @@ vlastnosti přímo na své HWND (pywin32 `propsys`, viz `app/appicon.py`).
 Při prvním spuštění se vytvoří složka `workspace/` s ukázkovým úkolem.
 Jiný pracovní prostor zvolíš přes menu **Soubor → Otevřít prostor…** (`Ctrl+O`).
 
+> **Když se aplikace „nespustí“** (run.bat proběhne a nic se neukáže): bez konzole by pád
+> zmizel beze stopy, proto každou neošetřenou chybu ukáže dialog a zapíše do
+> `%LOCALAPPDATA%\TaskMaster\Task Master\crash.log`. Nedostupný uložený prostor (typicky
+> odpojený Google Drive) okno neshodí – nabídne jiný prostor, jinak otevře výchozí místní a
+> uloženou cestu nechá pro příští start. Podrobný výpis dá `python main.py` z konzole.
+
 ## Ovládání
 
 Příkazy jsou v **horním menu**, v **kontextovém menu** (pravé tlačítko ve stromu),
@@ -417,5 +423,6 @@ výběr a pohled**:
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
 | `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |
 | `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
+| `test_startup.py` | start: nedostupný uložený prostor -> varování, volba jiného, jinak výchozí místní bez přepsání cesty; `main.excepthook` -> `crash.log` + dialog |
 | `test_settings.py` | nastavení: jedno okno se sekcemi, hledání (sekce, zvýraznění, filtr zkratek, `Enter`/`Esc`), aplikace hodnot přes akce (téma, zoom, karty, odklad, e-mail, údržba), přepínání z palety (odklad, interval e-mailu), otevření sekcí z menu, samostatné dialogy |
 | `test_mail_import.py` | e-mail → úkoly: parsování zpráv (RFC 2047, HTML → markdown, přílohy), sekce `_INBOX` (vznik, opětovné použití, `_Inbox`), přílohy s relativní cestou, duplicity podle `_mail_id`, nastavení, průchod `MainWindow` s falešnou schránkou (vlákna, označení jako přečtené, aktivní úkol, chyba, timer, undo) |
