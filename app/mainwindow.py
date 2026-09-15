@@ -44,10 +44,9 @@ from .constants import (
 )
 from .detailpanel import TaskDetailPanel
 from .filterpanel import FilterPanel
-from .maildialog import MailSettingsDialog
+from .settingsdialog import SettingsDialog
 from .savedfilters import FilterStore, SavedFilter
 from .savedfiltersdialog import SavedFiltersDialog
-from .shortcutdialog import ShortcutDialog
 from .shortcuts import COMMAND_DEFS, ShortcutManager
 from .stats import StatsDialog
 from .storage import Workspace, now_iso, parse_dt, parse_indented_text, serialize_node
@@ -83,6 +82,7 @@ class MainWindow(QMainWindow):
         # jsou nižší. Defaultně zapnuto.
         self._compact_cards = self.settings.value("compact_cards", True, type=bool)
         self._clip = None  # schránka úkolu: {"mode": "copy"|"cut", "data": ..., "src_id": ...}
+        self._skip_geometry_save = False  # Nastavení › Ostatní: zapomenout polohu okna
         self.undo = UndoManager()
         self.act: dict[str, QAction] = {}
 
@@ -525,6 +525,8 @@ class MainWindow(QMainWindow):
         self._make("app.open_workspace", self._choose_workspace)
         self._make("app.save", self._save)
         self._make("app.refresh", self._reload)
+        # jedno okno nastavení; zkratky a e-mail ho otevírají na své sekci
+        self._make("app.settings", lambda: self._open_settings())
         self._make("app.shortcuts", self._open_shortcuts)
         self._make("app.command_palette", self._open_command_palette)
         self._make("app.stats", self._open_stats)
@@ -583,6 +585,7 @@ class MainWindow(QMainWindow):
         "task.make_sequence": "link", "edit.undo": "undo",
         "app.open_workspace": "folder", "app.save": "save", "app.refresh": "rotate",
         "app.stats": "chart", "app.command_palette": "command", "app.shortcuts": "keyboard",
+        "app.settings": "sliders",
         "mail.import": "mail", "mail.settings": "sliders",
         "view.tree": "tree", "view.list": "list", "view.cards": "cards",
         "view.compact_cards": "sliders", "view.dark_theme": "moon",
@@ -614,7 +617,6 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act["app.refresh"])
         m_file.addSeparator()
         m_file.addAction(self.act["mail.import"])
-        m_file.addAction(self.act["mail.settings"])
         m_file.addSeparator()
         quit_act = QAction("Konec", self)  # bez zkratky (Ctrl+Q používá přesun v pořadí)
         quit_act.triggered.connect(self.close)
@@ -668,10 +670,14 @@ class MainWindow(QMainWindow):
                 m_editor.addAction(self.act[cid])
 
         m_settings = mb.addMenu("&Nastavení")
-        m_settings.addAction(self.act["app.stats"])
+        m_settings.addAction(self.act["app.settings"])
         m_settings.addSeparator()
-        m_settings.addAction(self.act["app.command_palette"])
+        # zkratky pro sekce jednoho dialogu (otevřou ho rovnou na správné stránce)
+        m_settings.addAction(self.act["mail.settings"])
         m_settings.addAction(self.act["app.shortcuts"])
+        m_settings.addSeparator()
+        m_settings.addAction(self.act["app.stats"])
+        m_settings.addAction(self.act["app.command_palette"])
         for m in mb.findChildren(QMenu):
             self._polish_menu(m)
 
@@ -783,7 +789,76 @@ class MainWindow(QMainWindow):
                 self.detail.link_list.setCurrentRow(0)
 
     def _open_shortcuts(self) -> None:
-        ShortcutDialog(self.shortcuts, self).exec()
+        self._open_settings("shortcuts")
+
+    # ------------------------------------------------------------------
+    # Nastavení (jedno okno; totéž jde i z palety, kategorie „Nastavení“)
+    # ------------------------------------------------------------------
+    def _open_settings(self, section: str | None = None) -> bool:
+        """Otevře dialog nastavení (volitelně na sekci). Vrací True po Uložit."""
+        vals = SettingsDialog.get(self, section)
+        if vals is None:
+            return False
+        self._apply_settings(vals)
+        return True
+
+    def _apply_settings(self, vals: dict) -> None:
+        """Promítne hodnoty z dialogu tam, kde se skutečně drží: akce (menu +
+        hlavička + QSettings), theme, časovače. Mění jen to, co se liší, aby
+        se okno zbytečně nepřestylovávalo."""
+        dark = vals.get("theme") == "dark"
+        if dark != theme.is_dark():
+            self.act["view.dark_theme"].setChecked(dark)  # -> _toggle_theme
+        z = float(vals.get("zoom", theme.zoom()) or theme.zoom())
+        if abs(z - theme.zoom()) > 1e-6:
+            self._zoom_pending = None
+            self._zoom_timer.stop()
+            self._apply_zoom(z)
+        compact = bool(vals.get("compact_cards", self._compact_cards))
+        if compact != self._compact_cards:
+            self.act["view.compact_cards"].setChecked(compact)  # -> _toggle_compact_cards
+        snooze = vals.get("snooze")
+        if snooze:
+            self._set_snooze_default(*snooze)
+        mail = vals.get("mail")
+        if mail is not None:
+            self.mail_settings = mail
+            mail.save(self.settings)
+            self._apply_mail_timer()
+        ws = vals.get("workspace")
+        if ws and (self.workspace is None or Path(ws) != Path(self.workspace.root)):
+            self.detail.commit()
+            self._set_workspace(Path(ws))
+        if vals.get("clear_palette_recent"):
+            self.settings.remove("palette_recent")
+        if vals.get("reset_geometry"):
+            self.settings.remove("geometry")
+            self._skip_geometry_save = True
+        self.status.showMessage("Nastavení uloženo", 2000)
+
+    def _set_snooze_default(self, d: int, h: int, m: int) -> None:
+        """Výchozí interval odkladu (předvyplní dialog); nula se nepamatuje."""
+        parts = (int(d), int(h), int(m))
+        if parts == (0, 0, 0):
+            return
+        self._last_snooze = parts
+        for key, val in zip(("d", "h", "m"), parts):
+            self.settings.setValue(f"snooze_{key}", int(val))
+
+    #: interval automatické kontroly schránky v paletě: (popisek, minuty)
+    MAIL_INTERVALS = (
+        ("Vypnuto (jen ručně)", 0), ("Každou minutu", 1), ("Každých 5 minut", 5),
+        ("Každých 15 minut", 15), ("Každých 30 minut", 30), ("Každou hodinu", 60),
+    )
+
+    def _set_mail_interval(self, minutes: int) -> None:
+        """Interval kontroly schránky z palety – uloží a přenastaví časovač."""
+        self.mail_settings.interval_min = max(0, int(minutes))
+        self.mail_settings.save(self.settings)
+        self._apply_mail_timer()
+        label = next((lbl for lbl, m in self.MAIL_INTERVALS if m == self.mail_settings.interval_min),
+                     f"každých {self.mail_settings.interval_min} min")
+        self.status.showMessage(f"Kontrola e-mailu: {label.lower()}", 2500)
 
     # ------------------------------------------------------------------
     # Příkazová paleta = registr všech uživatelských funkcí (viz CLAUDE.md)
@@ -974,6 +1049,24 @@ class MainWindow(QMainWindow):
                       checked=abs(theme.zoom() - z / 100) < 1e-6)
                     for z in (70, 80, 90, 100, 110, 125, 150, 175, 200)]
 
+        # --- nastavení přímo z palety (keep_open: přepínání bez zavírání)
+        def snooze_default_children() -> list[dict]:
+            cur = tuple(self._last_snooze)
+            items = []
+            for lbl, secs in self.SNOOZE_PRESETS:
+                d, rem = divmod(secs, 86400)
+                h, rem = divmod(rem, 3600)
+                parts = (d, h, rem // 60)
+                items.append(e("Nastavení", lbl, lambda p=parts: self._set_snooze_default(*p),
+                               icon="clock", checked=(parts == cur), keep_open=True))
+            return items
+
+        def mail_interval_children() -> list[dict]:
+            cur = int(self.mail_settings.interval_min or 0)
+            return [e("Nastavení", lbl, lambda m=m: self._set_mail_interval(m),
+                      icon="mail", checked=(m == cur), keep_open=True)
+                    for lbl, m in self.MAIL_INTERVALS]
+
         parent = node.parent if node is not None else None
         entries = [
             # úkol
@@ -1026,8 +1119,13 @@ class MainWindow(QMainWindow):
             a("app.open_workspace"),
             e("Prostor", "Otevřít složku prostoru v Průzkumníku", lambda: open_folder(ws.root if ws else None), icon="folder"),
             e("Prostor", "Kopírovat cestu k prostoru", lambda: copy(str(ws.root) if ws else ""), icon="clipboard"),
-            a("app.save"), a("app.refresh"), a("mail.import"), a("mail.settings"),
-            a("app.stats"), a("app.shortcuts"),
+            a("app.save"), a("app.refresh"), a("mail.import"),
+            a("app.stats"),
+            # nastavení: jedno okno + přímé přepínání hodnot (téma a zoom jsou v Zobrazení)
+            a("app.settings"),
+            e("Nastavení", "Nastavení: výchozí odklad", children=snooze_default_children, icon="clock"),
+            e("Nastavení", "Nastavení: kontrola e-mailu", children=mail_interval_children, icon="mail"),
+            a("mail.settings"), a("app.shortcuts"),
             e("Aplikace", "Konec", self.close),
         ]
         # stavy mají vlastní podúroveň; zbylé akce (editor apod.) doplň automaticky,
@@ -2421,11 +2519,8 @@ class MainWindow(QMainWindow):
         d, rem = divmod(int(seconds), 86400)
         h, rem = divmod(rem, 3600)
         m = rem // 60
-        if (d, h, m) == (0, 0, 0):
-            return  # kratší než minuta (typicky z testů) – nemá smysl pamatovat
-        self._last_snooze = (d, h, m)
-        for key, val in zip(("d", "h", "m"), self._last_snooze):
-            self.settings.setValue(f"snooze_{key}", int(val))
+        # kratší než minuta (typicky z testů) se nepamatuje – řeší _set_snooze_default
+        self._set_snooze_default(d, h, m)
 
     def _tick_snooze(self) -> None:
         """Jednou za sekundu obnoví odpočty; při doběhnutí přeskládá pořadí.
@@ -2885,13 +2980,8 @@ class MainWindow(QMainWindow):
     # E-mail -> úkoly (sekce _INBOX)
     # ------------------------------------------------------------------
     def _open_mail_settings(self) -> bool:
-        vals = MailSettingsDialog.get(self, self.mail_settings)
-        if vals is None:
-            return False
-        self.mail_settings = vals
-        vals.save(self.settings)
-        self._apply_mail_timer()
-        return True
+        """Sekce E-mail v dialogu nastavení; True, když uživatel uložil."""
+        return self._open_settings("mail")
 
     def _apply_mail_timer(self, first_check_ms: int = 4000) -> None:
         """Periodická kontrola schránky; s nastaveným intervalem proběhne první
@@ -3012,6 +3102,7 @@ class MainWindow(QMainWindow):
             w.wait(3000)  # vlákno nesmí přežít okno
         self.detail.commit()
         self._save_state()
-        self.settings.setValue("geometry", self.saveGeometry())
+        if not self._skip_geometry_save:
+            self.settings.setValue("geometry", self.saveGeometry())
         self.undo.cleanup()
         super().closeEvent(event)

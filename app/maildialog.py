@@ -1,4 +1,9 @@
-"""Dialog nastavení e-mailové schránky pro načítání úkolů (IMAP)."""
+"""Nastavení e-mailové schránky pro načítání úkolů (IMAP).
+
+`MailSettingsForm` je vložitelný formulář – žije v sekci *E-mail* dialogu
+nastavení (`settingsdialog.py`). `MailSettingsDialog` ho jen obalí pro
+samostatné použití (např. první import bez nastavené schránky).
+"""
 
 from __future__ import annotations
 
@@ -14,23 +19,23 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from . import mailimport, theme
 from .mailimport import MailSettings, MailWorker
 
 
-class MailSettingsDialog(QDialog):
+class MailSettingsForm(QWidget):
     """Server, přihlášení, složka a interval automatické kontroly.
 
     Tlačítko *Otestovat připojení* běží ve vlákně (síť nesmí zmrazit okno);
-    výsledek se ukáže pod formulářem.
+    výsledek se ukáže pod formulářem. Před zavřením rodiče zavolej
+    `wait_worker()`, ať vlákno nepřežije okno.
     """
 
     def __init__(self, settings: MailSettings, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Načítání úkolů z e-mailu")
-        self.setMinimumWidth(theme.px(460))
         self._worker: MailWorker | None = None
 
         self.host = QLineEdit(settings.host)
@@ -50,7 +55,8 @@ class MailSettingsDialog(QDialog):
         self.interval.setToolTip("Schránka se kontroluje sama v tomto intervalu (i hned po startu); 0 = jen ručně")
         self.interval.setValue(int(settings.interval_min))
 
-        form = QFormLayout()
+        # vystaveno kvůli hledání v dialogu nastavení (prochází řádky formuláře)
+        self.form_layout = form = QFormLayout()
         form.addRow("Server (IMAP):", self.host)
         port_row = QHBoxLayout()
         port_row.addWidget(self.port)
@@ -67,6 +73,7 @@ class MailSettingsDialog(QDialog):
             "(předmět = název, text i přílohy = obsah úkolu) a ve schránce se označí "
             "jako přečtený. Heslo se ukládá do Správce pověření Windows."
         )
+        hint.setObjectName("hint")
         hint.setWordWrap(True)
         hint.setTextFormat(Qt.TextFormat.RichText)
 
@@ -78,15 +85,11 @@ class MailSettingsDialog(QDialog):
         test_row.addWidget(self.test_btn)
         test_row.addWidget(self.result, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(hint)
         lay.addLayout(form)
         lay.addLayout(test_row)
-        lay.addWidget(buttons)
 
     def values(self) -> MailSettings:
         return MailSettings(
@@ -119,18 +122,40 @@ class MailSettingsDialog(QDialog):
         self.test_btn.setEnabled(True)
         self.result.setText(str(res) if err is None else f"Chyba: {err}")
 
-    def reject(self) -> None:
-        self._wait_worker()
-        super().reject()
-
-    def accept(self) -> None:
-        self._wait_worker()
-        super().accept()
-
-    def _wait_worker(self) -> None:
+    def wait_worker(self) -> None:
+        """Před zavřením okna počkej na běžící test připojení."""
         w = self._worker
         if w is not None and w.isRunning():
             w.wait(3000)
+
+
+class MailSettingsDialog(QDialog):
+    """Samostatný dialog nad `MailSettingsForm` (OK / Zrušit)."""
+
+    def __init__(self, settings: MailSettings, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Načítání úkolů z e-mailu")
+        self.setMinimumWidth(theme.px(460))
+        self.form = MailSettingsForm(settings, self)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(self.form)
+        lay.addWidget(buttons)
+
+    def values(self) -> MailSettings:
+        return self.form.values()
+
+    def reject(self) -> None:
+        self.form.wait_worker()
+        super().reject()
+
+    def accept(self) -> None:
+        self.form.wait_worker()
+        super().accept()
 
     @staticmethod
     def get(parent, settings: MailSettings) -> MailSettings | None:

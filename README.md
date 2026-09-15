@@ -27,7 +27,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
   - **Výběr umístění** – v dialogu je rozbalovací pole *Umístění* (`Ctrl+L`) s **výchozím umístěním** a všemi **top-level úkoly začínajícími podtržítkem**; po rozkliknutí *Vybrat ze stromu* lze zvolit **libovolnou cestu** ve stromu, nahoře s **textovým hledáním**. Zvolený cíl vytvoří úkol jako jeho podúkol.
 - ✅ **Vícenásobný výběr** ve stromu, seznamu i v režimu **Bez rušení** (Ctrl+klik, Shift+klik, v kartách i `Ctrl+A` / Shift+šipky) – hromadné operace nad označenými úkoly: **smazat**, **přepnout hotovo**, **vlaječka** (`Ctrl+T`), **priorita** (`Ctrl+↑/↓`) a **přesun v pořadí** (`Ctrl+W/Q` posune celý blok).
 - ☑️ **Checkbox stavu** ve stromu i na kartách – jedním kliknutím *hotovo* (přeškrtne se), nebo `Ctrl+Enter`. Při dokončení úkolu, který má **nedokončené podúkoly**, se aplikace **zeptá na potvrzení** (platí i pro změnu stavu v detailu).
-- 🏷 **Stavy úkolu**: *Ke zpracování*, *Probíhá*, *Čeká* (na vnější věc), *Čeká do…* (odklad s odpočtem), *Blokováno*, *Hotovo* – barevně odlišené. Stav lze nastavit i **z kontextového menu** (podnabídka *Stav*), z menu *Úkol → Stav* nebo z **příkazové palety** – tedy i v **Bez rušení**, kde není vidět combobox v detailu. Působí na celý vícenásobný výběr; stavům lze v *Nastavení zkratek* přiřadit vlastní klávesu.
+- 🏷 **Stavy úkolu**: *Ke zpracování*, *Probíhá*, *Čeká* (na vnější věc), *Čeká do…* (odklad s odpočtem), *Blokováno*, *Hotovo* – barevně odlišené. Stav lze nastavit i **z kontextového menu** (podnabídka *Stav*), z menu *Úkol → Stav* nebo z **příkazové palety** – tedy i v **Bez rušení**, kde není vidět combobox v detailu. Působí na celý vícenásobný výběr; stavům lze v *Nastavení → Zkratky* přiřadit vlastní klávesu.
 - ⏳ **Čeká do… (odklad s odpočtem)** – přechodem na tento stav zvolíš v dialogu interval **posuvníky na dny, hodiny a minuty** (předvyplní se **naposledy použitá** hodnota, poprvé **10 min** z `DEFAULT_SNOOZE`). Na kartě i ve stromu běží **odpočet**; jakmile vyprší, ukáže se **⏰ Čas vypršel** a tlačítko **↻ Obnovit**, které úkol odloží znovu o **stejný interval**. Odklad má **barvu čekajícího úkolu** a po doběhnutí si ji ponechá – že vypršel, dává najevo pozice nahoře a text, ne změna barvy.
   - **Řazení v Bez rušení**: dokud odpočet běží, úkol je **mezi ostatními čekajícími**; jakmile doběhne, jde **úplně nahoru** nad všechny ostatní (a zůstane v plné výšce karty). Přechod na jiný stav odklad zruší.
   - **Filtr**: doběhlý odklad se bere jako *Ke zpracování*, takže **nezmizí** ani při filtru na aktivní stavy – během čekání je schovaný, po vypršení se zase objeví.
@@ -65,6 +65,7 @@ Desktopový **hierarchický task manager** pro Windows (Python + PySide6) s **WY
 - 📅 **Dnešní počty na spodní liště** – průběžně zobrazuje počet **dnes vytvořených** (`+N`) a **dnes dokončených** (`✓N`) úkolů.
 - 💾 **Perzistence stavu** – aktivní úkol, filtr a zobrazení se ukládají do `workspace/_state.yaml` a obnoví po startu.
 - ⌨️ **Plně ovladatelné klávesnicí** s **konfigurovatelnými zkratkami**.
+- ⚙️ **Jedno okno Nastavení** (`Ctrl+,`, menu *Nastavení*) se sekcemi *Vzhled, Prostor, Odklad, E-mail, Zkratky, Ostatní* a **hledáním** (`Ctrl+F`) napříč všemi volbami; téma, zoom, výchozí odklad i interval kontroly e-mailu jdou přepínat i **z příkazové palety** (kategorie *Nastavení*).
 
 ## Vzhled
 
@@ -206,7 +207,7 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 | `Ctrl+W` / `Ctrl+Q` | Posunout úkol v pořadí nahoru / dolů | fokus na stromu nebo kartách |
 | `Ctrl+↑` / `Ctrl+↓` | Zvýšit / snížit prioritu | fokus na stromu nebo kartách |
 | `Ctrl+T` | Přepnout vlaječku 🚩 | kdekoli |
-| `Ctrl+,` | Nastavení zkratek | kdekoli |
+| `Ctrl+,` | Nastavení… (jedno okno; `Ctrl+F` uvnitř hledá) | kdekoli |
 | `Ctrl+F` | Přejít na hledání/filtr | kdekoli |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+4` | Přejít na strom / editor / odkazy | kdekoli |
 | `Ctrl+3` | Přejmenovat úkol (inline) | kdekoli |
@@ -220,12 +221,38 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 > Zkratky editoru a stromu jsou **kontextové** – fungují jen když má daný panel
 > fokus, aby nekolidovaly s psaním textu.
 
+## Nastavení
+
+Menu **Nastavení → Nastavení…** (`Ctrl+,`) otevře **jedno okno** se sekcemi vlevo:
+
+| Sekce | Co je v ní |
+| --- | --- |
+| **Vzhled** | světlé / tmavé téma, zoom celého UI (70–200 %), úsporné karty v Bez rušení |
+| **Prostor** | cesta k pracovnímu prostoru (*Změnit…*, *Otevřít v Průzkumníku*) |
+| **Odklad** | výchozí interval, který předvyplní dialog *Čekat do…* |
+| **E-mail** | IMAP schránka, složka, interval automatické kontroly, *Otestovat připojení* (viz [Úkoly z e-mailu](#úkoly-z-e-mailu)) |
+| **Zkratky** | klávesové zkratky všech příkazů (viz níže) |
+| **Ostatní** | údržba (vymazat *naposledy použité* v paletě, zapomenout polohu okna) a přehled, kde se co ukládá |
+
+- Změny se použijí až tlačítkem **Uložit**; promítnou se i do menu *Zobrazení* a hlavičky
+  (téma, zoom, úsporné karty), do časovače kontroly e-mailu a do dialogu odkladu.
+- **Hledání** (pole nad sekcemi, `Ctrl+F`) má stejná pravidla jako hledání úkolů: víc slov
+  musí sedět všechna, diakritika ani velikost písmen nerozhodují, název sekce se počítá jako
+  kontext (`kontrola mail` najde interval v sekci E-mail). Sekce bez nálezu z levého seznamu
+  zmizí, nalezené řádky se zvýrazní, ve *Zkratkách* se filtruje seznam příkazů; `Enter` skočí
+  na první nález, `Esc` hledání vyčistí.
+- Položky *Nastavení e-mailu…* a *Klávesové zkratky…* v menu otevírají totéž okno rovnou na
+  své sekci.
+- **Z příkazové palety** (`Ctrl+Shift+P`, kategorie *Nastavení*): *Nastavení…* otevře okno,
+  *Nastavení: výchozí odklad* (předvolby) a *Nastavení: kontrola e-mailu* (interval) přepínají
+  hodnoty rovnou a nechají paletu otevřenou; téma a zoom jsou v kategorii *Zobrazení*.
+
 ### Konfigurace zkratek
 
-Menu **Nastavení → Klávesové zkratky…** (`Ctrl+,`) otevře dialog, kde lze každou
-zkratku přepsat, vymazat nebo vrátit na výchozí. Změny se ukládají do JSON
-souboru v adresáři konfigurace aplikace (`%LOCALAPPDATA%\TaskMaster\Task Master\shortcuts.json`)
-a aplikují se okamžitě. Dialog upozorní na kolize ve stejném kontextu.
+Sekce **Zkratky** (menu *Nastavení → Klávesové zkratky…*) umožní každou zkratku přepsat,
+vymazat nebo vrátit na výchozí. Změny se ukládají do JSON souboru v adresáři konfigurace
+aplikace (`%LOCALAPPDATA%\TaskMaster\Task Master\shortcuts.json`) a aplikují se okamžitě
+po *Uložit*. Dialog upozorní na kolize ve stejném kontextu.
 
 ## Uložené filtry
 
@@ -259,7 +286,7 @@ výchozí prioritu.
   s Androidem). Import lze vrátit `Ctrl+Z`.
 - Síť běží ve vlákně, okno nezamrzne; průběh a výsledek hlásí stavový řádek.
 
-**Nastavení e-mailu…** (menu *Soubor*): server (výchozí `imap.seznam.cz`, port 993,
+**Nastavení e-mailu…** (menu *Nastavení*; sekce *E-mail* okna Nastavení): server (výchozí `imap.seznam.cz`, port 993,
 SSL), přihlašovací jméno (výchozí `dapar777_taskmaster@seznam.cz`), heslo, složka
 (`INBOX`) a interval **automatické kontroly** v minutách (výchozí **1 min**, 0 = jen ručně);
 kontrola proběhne i hned po startu aplikace. Tlačítko
@@ -336,7 +363,9 @@ app/
   stats.py              Statistiky – výpočet + dialog se sloupcovými grafy (F8)
   commandpalette.py     CommandPalette – víceúrovňová příkazová paleta (Ctrl+Shift+P); strom příkazů staví MainWindow._build_palette_commands
   shortcuts.py          ShortcutManager + definice příkazů (zdroj pravdy)
-  shortcutdialog.py     dialog pro konfiguraci zkratek
+  settingsdialog.py     SettingsDialog – jedno okno nastavení (sekce vlevo, hledání); hodnoty aplikuje MainWindow._apply_settings
+  shortcutdialog.py     ShortcutEditor (sekce Zkratky v nastavení) + samostatný dialog
+  maildialog.py         MailSettingsForm (sekce E-mail v nastavení) + samostatný dialog
   savedfilters.py       SavedFilter + FilterStore (presety v JSON)
   savedfiltersdialog.py dialog pro správu uložených filtrů
   appicon.py            ikona aplikace ze sady Terakota (assets/icons) + identita v hlavním panelu (pywin32)
@@ -388,4 +417,5 @@ výběr a pohled**:
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
 | `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |
 | `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
+| `test_settings.py` | nastavení: jedno okno se sekcemi, hledání (sekce, zvýraznění, filtr zkratek, `Enter`/`Esc`), aplikace hodnot přes akce (téma, zoom, karty, odklad, e-mail, údržba), přepínání z palety (odklad, interval e-mailu), otevření sekcí z menu, samostatné dialogy |
 | `test_mail_import.py` | e-mail → úkoly: parsování zpráv (RFC 2047, HTML → markdown, přílohy), sekce `_INBOX` (vznik, opětovné použití, `_Inbox`), přílohy s relativní cestou, duplicity podle `_mail_id`, nastavení, průchod `MainWindow` s falešnou schránkou (vlákna, označení jako přečtené, aktivní úkol, chyba, timer, undo) |

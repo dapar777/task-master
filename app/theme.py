@@ -346,6 +346,11 @@ QLabel#pathLabel {{ color: {t.text2}; }}
 QLabel#faintLabel {{ color: {t.muted}; }}
 QLabel#kbd {{ color: {t.muted}; border: 1px solid {t.line}; border-radius: 4px; padding: 0 4px; font-size: 8pt; }}
 QLabel#hint {{ color: {t.text2}; }}
+QLineEdit#settingsSearch {{ padding-left: 4px; }}
+/* hledání v nastavení: nalezené řádky (popisek podbarvený, pole s oranžovým okrajem) */
+QLabel[searchHit="true"] {{ background: {sel_tint}; border-radius: 6px; padding: 2px 4px; }}
+QLineEdit[searchHit="true"], QSpinBox[searchHit="true"], QFrame#segment[searchHit="true"] {{ border: 1px solid {t.accent}; }}
+QCheckBox[searchHit="true"] {{ border: 1px solid {t.accent}; border-radius: 6px; padding: 2px 4px; }}
 QFrame#hline {{ background: {t.line}; max-height: 1px; min-height: 1px; border: 0; }}
 
 QTreeWidget, QTreeView, QListWidget, QListView {{

@@ -80,14 +80,29 @@ v paletě = nedokončená; `tests/test_palette.py` hlídá, že každá akce z `
 má položku. Položka s `children` (seznam nebo callable, staví se líně) otevře
 další úroveň (Stav, Priorita, Odložit o, Řadit podle › pole › směr, Zobrazení,
 Téma, Zoom, Filtr: …, Uložené filtry, Podúkoly, Související úkoly, Soubory
-úkolu); `checked=True` označí aktuální stav; `keep_open=True` nechá paletu
-otevřenou a přestaví úroveň (přepínání kritérií filtru – stav čti v callable
+úkolu, Nastavení: výchozí odklad / kontrola e-mailu); `checked=True` označí
+aktuální stav; `keep_open=True` nechá paletu otevřenou a přestaví úroveň (přepínání kritérií filtru – stav čti v callable
 `children`, ne v uzávěru, jinak zaškrtnutí zastará); `search=callable(dotaz)`
 je vyhledávací úroveň (Přejít na úkol), `extra_search`/`mode_search` dodávají
 úkoly na kořen (3+ znaky, prefix `u `). Naposledy použité se ukládají do
 QSettings `palette_recent` jako cesty popisků oddělené `|` – **přejmenování
 popisku** starý záznam tiše zahodí, popisky na kořeni musí být jedinečné.
 Hledání na kořeni prochází i listy podúrovní (`_deep_entries`, hloubka 3).
+
+**Nastavení** – jedno okno `app/settingsdialog.py` (`SettingsDialog`; sekce Vzhled,
+Prostor, Odklad, E-mail, Zkratky, Ostatní). Dialog **nic neaplikuje sám**, jen vrátí
+`values()`; promítá je `MainWindow._apply_settings` přes existující akce
+(`view.dark_theme`, `view.compact_cards`, `_apply_zoom`, `_set_snooze_default`,
+`mail_settings.save` + `_apply_mail_timer`), aby menu, hlavička, QSettings i časovače
+zůstaly v synchronu. Vložitelné části: `MailSettingsForm` (`maildialog.py`) a
+`ShortcutEditor` (`shortcutdialog.py`; vlastní kontrola kolizí, ukládá se sám);
+samostatné dialogy nad nimi zůstávají. **Nová volba = řádek v sekci + záznam v indexu
+hledání** (`_index_form` / `_entries`, klíčová slova podle popisku) **+ větev
+v `_apply_settings` + položka v paletě** (kategorie *Nastavení*, `keep_open=True`,
+`checked` z aktuální hodnoty, ne z uzávěru). Hledání v dialogu používá `search.parse`
+(stejná pravidla jako hledání úkolů; text sekce je kontext řádku), nálezy značí
+vlastnost `searchHit` (QSS v `theme.py`), Enter/Esc v poli obsluhuje `eventFilter`
+(Enter by jinak stiskl výchozí Uložit). Testy: `tests/test_settings.py`.
 
 **`app/undo.py`** – hybridní undo: levné záznamy (`fields`, `created`, `moved`,
 `deleted`) místo kopie workspace; `snapshot` je jen fallback. Před operací,
