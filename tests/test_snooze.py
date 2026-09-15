@@ -357,12 +357,16 @@ check("zpracovatelný podúkol taky ne", not par.should_auto_block())
 
 # a přes aplikaci: kaskáda i odblokování
 node("Sub1").set_field("_status", "waiting")
-node("Sub2").set_snooze(1)
+# odklad musí přežít _populate() + settle() níž, jinak by vypršel dřív, než se
+# stihne ověřit zablokování (na pomalém stroji to dělalo náhodné selhání)
+node("Sub2").set_snooze(3)
 win._populate()
 settle()
 check("rodič se automaticky zablokoval",
       node("Rodic ab").meta.get("_status") == "blocked"
       and node("Rodic ab").auto_blocked)
+# nech odklad doběhnout (a nečekej celé 3 s – stačí termín posunout do minulosti)
+node("Sub2").set_snooze(1)
 time.sleep(1.2)
 win._tick_snooze()
 settle()
@@ -378,11 +382,13 @@ win.workspace.load()
 win._populate()
 settle()
 node("stask1").set_field("_status", "waiting")
-node("task1").set_snooze(1)
+# delší interval, ať odklad přežije _populate() + settle() (viz výš)
+node("task1").set_snooze(3)
 win._populate()
 settle()
 check("během intervalu zůstává odložený",
       node("task1").meta.get("_status") == "snoozed")
+node("task1").set_snooze(1)  # zkrať, ať se nečeká celé 3 s
 time.sleep(1.2)
 win._tick_snooze()
 settle()
