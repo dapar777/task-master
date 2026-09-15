@@ -25,7 +25,7 @@ from pathlib import Path
 
 import yaml
 
-from .constants import DEFAULT_PRIORITY, DEFAULT_STATUS, LEGACY_PRIORITY
+from .constants import DEFAULT_PRIORITY, DEFAULT_STATUS, LEGACY_PRIORITY, STATUSES
 
 # Znaky nepovolené v názvech adresářů na Windows
 _INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -81,6 +81,7 @@ def default_meta(title: str) -> dict:
         "_blocked_by": "",
         "_snooze_until": "",
         "_snooze_secs": 0,
+        "_snooze_prev": "",
     }
 
 
@@ -366,8 +367,17 @@ class TaskNode:
         return rem <= 0
 
     def set_snooze(self, seconds: int) -> None:
-        """Odloží úkol o `seconds`; délku si pamatuje pro opakování."""
+        """Odloží úkol o `seconds`; délku si pamatuje pro opakování.
+
+        Zapamatuje si i stav, ze kterého se odkládalo (`_snooze_prev`), aby šlo
+        po vypršení jedním krokem vrátit původní stav. Opakované odložení už
+        odloženého úkolu ho nepřepíše – jinak by se „snoozed“ zapamatoval jako
+        původní stav a vrácení by nikam nevedlo.
+        """
         seconds = max(1, int(seconds))
+        prev = self.meta.get("_status")
+        if prev and prev != "snoozed":
+            self.meta["_snooze_prev"] = prev
         self.meta["_status"] = "snoozed"
         self.meta["_snooze_until"] = (
             datetime.now() + timedelta(seconds=seconds)
@@ -376,9 +386,19 @@ class TaskNode:
         self.meta.pop("_auto_blocked", None)
         self.touch()
 
+    @property
+    def snooze_prev_status(self) -> str:
+        """Stav před odložením (`""` = neznámý), platný jen ve stavu snoozed."""
+        if self.meta.get("_status") != "snoozed":
+            return ""
+        prev = self.meta.get("_snooze_prev") or ""
+        return prev if prev in STATUSES and prev != "snoozed" else ""
+
     def clear_snooze(self) -> None:
         """Zruší termín odkladu (délku nech – ať jde Obnovit stejnou dobou)."""
         self.meta["_snooze_until"] = ""
+        # odkud se odkládalo, platí jen dokud je úkol odložený
+        self.meta["_snooze_prev"] = ""
 
     # ----- automatické blokování podle přímých podúkolů -----
     @property

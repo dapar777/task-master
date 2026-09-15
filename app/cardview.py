@@ -72,6 +72,7 @@ class CardWidget(QFrame):
     statusToggled = Signal(object, str)
     contextRequested = Signal(object, object)  # (node, globální pozice)
     resumeRequested = Signal(object)           # (node) – tlačítko Obnovit
+    restoreRequested = Signal(object)          # (node) – tlačítko Vrátit (doběhlý odklad)
 
     def __init__(self, node, parent=None, resolver=None, compact=False, narrow=False):
         super().__init__(parent)
@@ -124,6 +125,7 @@ class CardWidget(QFrame):
             right.addWidget(Badge(f"↳ {inc}", tooltip=f"{inc} nedokončených podúkolů"))
         self.countdown = None
         self.resume_btn = None
+        self.restore_btn = None
         if status == "snoozed":
             self.countdown = StatusChip("snoozed", "", icon="clock", mono=True)
             right.addWidget(self.countdown)
@@ -131,6 +133,14 @@ class CardWidget(QFrame):
                                          text="" if narrow else "Obnovit", framed=True)
             self.resume_btn.clicked.connect(lambda: self.resumeRequested.emit(self.node))
             right.addWidget(self.resume_btn)
+            # doběhlý odklad: vrátit stav, ze kterého se odkládalo (zná ho _snooze_prev)
+            prev = node.snooze_prev_status
+            if prev and node.snooze_elapsed():
+                self.restore_btn = IconButton(
+                    "undo", f"Vrátit na „{STATUSES.get(prev, prev)}“",
+                    text="" if narrow else "Vrátit", framed=True)
+                self.restore_btn.clicked.connect(lambda: self.restoreRequested.emit(self.node))
+                right.addWidget(self.restore_btn)
             self.refresh_countdown()
         self.has_body = bool(node.has_body)
         if self.has_body:
@@ -295,6 +305,7 @@ class CardView(QScrollArea):
     cardStatusToggled = Signal(object, str)
     cardContextMenu = Signal(object, object)  # (node, globální pozice)
     cardResumeRequested = Signal(object)      # (node) – tlačítko Obnovit
+    cardRestoreRequested = Signal(object)     # (node) – tlačítko Vrátit
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -402,6 +413,7 @@ class CardView(QScrollArea):
             node.meta.get("_category"), tuple(node.meta.get("_tags") or ()),
             node.blocked_by, node.auto_blocked, blocker,
             node.snooze_elapsed(),  # doběhnutí mění vzhled i zařazení
+            node.snooze_prev_status,  # tlačítko Vrátit se objeví/zmizí podle něj
             len(node.links), len(node.refs), node.order,
             _incomplete_subtasks(node),
             theme.zoom(),  # rozměry a písma karty jsou od zoomu odvozené
@@ -417,6 +429,7 @@ class CardView(QScrollArea):
         card.statusToggled.connect(self.cardStatusToggled)
         card.contextRequested.connect(self._on_card_context)
         card.resumeRequested.connect(self.cardResumeRequested)
+        card.restoreRequested.connect(self.cardRestoreRequested)
         return card
 
     def _header(self, key: str, label: str, urgent: bool) -> QLabel:

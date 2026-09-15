@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self.card_view.cardStatusToggled.connect(self._on_status_toggled)
         self.card_view.cardContextMenu.connect(self._show_card_menu)
         self.card_view.cardResumeRequested.connect(self._resume_snoozed)
+        self.card_view.cardRestoreRequested.connect(self._restore_snoozed)
 
         # stránka Bez rušení: lišta chipů filtru, (sbalený) panel kritérií, karty
         self.cards_page = QWidget()
@@ -982,6 +983,9 @@ class MainWindow(QMainWindow):
               icon_color=(theme.status_style(cur_status)[2] if cur_status else None)),
             e("Úkol", "Priorita", children=priority_children, icon="hash"),
             e("Úkol", "Odložit o", children=snooze_children, icon="clock"),
+            e("Úkol", "Vrátit stav před odložením", self._restore_current, icon="undo",
+              status=lambda: (STATUSES.get(node.snooze_prev_status, "")
+                              if node is not None and node.snooze_prev_status else "")),
             a("task.priority_up"), a("task.priority_down"),
             a("task.move_up"), a("task.move_down"),
             a("task.copy"), a("task.cut"), a("task.paste"), a("task.paste_text"),
@@ -2461,6 +2465,30 @@ class MainWindow(QMainWindow):
         node.set_snooze(secs)
         self.status.showMessage(
             f"„{node.title}“ odloženo znovu o {format_duration(secs)}", 4000
+        )
+        self._elapsed_paths = getattr(self, "_elapsed_paths", set()) - {str(node.path)}
+        self._populate()
+        self._select_in_view(node)
+
+    def _restore_current(self) -> None:
+        """Paleta: vrátí aktivní odložený úkol do stavu před odložením."""
+        node = self._current_node
+        if node is None or not node.snooze_prev_status:
+            self.status.showMessage("Úkol nemá zapamatovaný stav před odložením", 4000)
+            return
+        self._restore_snoozed(node)
+
+    def _restore_snoozed(self, node) -> None:
+        """Vrátí doběhlý odklad do stavu, ze kterého se odkládalo."""
+        prev = node.snooze_prev_status
+        if not prev:
+            return
+        self.undo.push_fields([(node.task_id, node.meta)])
+        node.set_field("_status", prev)
+        node.clear_snooze()
+        node.save_meta()
+        self.status.showMessage(
+            f"„{node.title}“ vráceno na „{STATUSES.get(prev, prev)}“", 4000
         )
         self._elapsed_paths = getattr(self, "_elapsed_paths", set()) - {str(node.path)}
         self._populate()

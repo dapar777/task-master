@@ -403,7 +403,51 @@ settle()
 check("blokovaný podúkol ho zablokuje taky",
       node("task1").meta.get("_status") == "blocked")
 
-print("20) Po opuštění stavu se evidence doběhlých uklidí")
+print("20) Vrácení do stavu před odložením")
+# odklad si pamatuje, odkud se odkládalo (_snooze_prev), aby šlo po vypršení
+# jedním krokem vrátit původní stav místo hádání
+back = win.workspace.create_root("Vrat me")
+win.workspace.load()
+back = node("Vrat me")
+back.set_field("_status", "waiting")
+back.set_snooze(1)
+check("prev drží původní stav", back.snooze_prev_status == "waiting")
+back.set_snooze(3600)
+check("opakované odložení prev nepřepíše", back.snooze_prev_status == "waiting")
+time.sleep(0.1)
+back.set_snooze(1)
+time.sleep(1.2)
+win._tick_snooze()
+settle()
+check("po vypršení je prev pořád k dispozici", back.snooze_prev_status == "waiting")
+win._restore_snoozed(back)
+settle()
+check("vrácení nastaví původní stav", node("Vrat me").meta.get("_status") == "waiting")
+check("termín odkladu je pryč", node("Vrat me").snooze_until is None)
+check("prev se po vrácení uklidí", node("Vrat me").snooze_prev_status == "")
+win._undo()
+settle()
+check("undo vrátí zpět do odloženého", node("Vrat me").meta.get("_status") == "snoozed")
+# ať kontrola „klidných tiků“ níž nemá nově doběhlý odklad k ohlášení
+win._restore_snoozed(node("Vrat me"))
+settle()
+
+# odložení z „todo“ i bez předchozí historie
+fresh = win.workspace.create_root("Cerstvy")
+win.workspace.load()
+fresh = node("Cerstvy")
+fresh.set_snooze(3600)
+check("z todo se pamatuje todo", fresh.snooze_prev_status == "todo")
+# ať následující kontrola „klidných tiků“ nemá čerstvě doběhlý odklad na práci
+fresh.set_field("_status", "todo")
+fresh.clear_snooze()
+# stav vybraný comboboxem (bez set_snooze) prev nemá – vrácení se nenabídne
+lost2 = node("Ceka2")
+lost2.meta["_snooze_prev"] = ""
+lost2.set_field("_status", "snoozed")
+check("bez zapamatovaného stavu nic nevrací", lost2.snooze_prev_status == "")
+
+print("21) Po opuštění stavu se evidence doběhlých uklidí")
 # tick dřív končil hned, když žádný odložený úkol nezbyl – zápis o doběhlých
 # tak zůstal viset a časovač přebudovával zobrazení pořád dokola
 # Pozn.: tahle kontrola je slabší – v sadě zbývají jiné doběhlé úkoly, takže
