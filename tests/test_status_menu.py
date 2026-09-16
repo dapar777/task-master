@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from app import mnemonics  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
@@ -97,18 +98,18 @@ def node(t):
 def status_menu(n):
     menu = win._build_card_menu(n)
     return next((a.menu() for a in menu.actions()
-                 if a.menu() and a.menu().title() == "Stav"), None)
+                 if a.menu() and mnemonics.strip(a.menu().title()) == "Stav"), None)
 
 
 print("1) Podnabídka Stav je v menu karty a nabízí všechny stavy")
 check("režim je Bez rušení", win._view_mode == "cards")
 sm = status_menu(node("Alfa"))
 check("podnabídka Stav existuje", sm is not None)
-labels = [a.text() for a in sm.actions()]
+labels = [mnemonics.strip(a.text()) for a in sm.actions()]
 check(f"nabízí všechny stavy ({len(labels)})",
       sorted(labels) == sorted(STATUSES.values()))
 check("aktuální stav je zaškrtnutý",
-      [a.text() for a in sm.actions() if a.isChecked()] == [STATUSES["todo"]])
+      [mnemonics.strip(a.text()) for a in sm.actions() if a.isChecked()] == [STATUSES["todo"]])
 
 print("2) „Čeká\" jde nastavit bez opuštění Bez rušení")
 win._set_status_from_card(node("Alfa"), "waiting")
@@ -135,7 +136,7 @@ check("stav se nezměnil", node("Gama").meta.get("_status") == before)
 print("5) Zaškrtnutí sleduje aktuální stav")
 sm = status_menu(node("Alfa"))
 check("zaškrtnuto je Čeká",
-      [a.text() for a in sm.actions() if a.isChecked()] == [STATUSES["waiting"]])
+      [mnemonics.strip(a.text()) for a in sm.actions() if a.isChecked()] == [STATUSES["waiting"]])
 
 print("6) Podnabídka je i v kontextovém menu stromu")
 win._view_mode = "tree"
@@ -151,11 +152,11 @@ print("7) Podnabídka Stav je i v hlavním menu Úkol")
 win._current_node = node("Gama")
 win._m_status.aboutToShow.emit()
 app.processEvents()
-main_labels = [a.text() for a in win._m_status.actions()]
+main_labels = [mnemonics.strip(a.text()) for a in win._m_status.actions()]
 check("hlavní menu nabízí všechny stavy",
       sorted(main_labels) == sorted(STATUSES.values()))
 check("zaškrtnutý je aktuální stav Gamy",
-      [a.text() for a in win._m_status.actions() if a.isChecked()]
+      [mnemonics.strip(a.text()) for a in win._m_status.actions() if a.isChecked()]
       == [STATUSES[node("Gama").meta.get("_status")]])
 
 win._set_status_from_card(node("Gama"), "in_progress")
@@ -166,7 +167,7 @@ win._current_node = node("Gama")
 win._m_status.aboutToShow.emit()
 app.processEvents()
 check("zaškrtnutí sleduje změnu stavu",
-      [a.text() for a in win._m_status.actions() if a.isChecked()]
+      [mnemonics.strip(a.text()) for a in win._m_status.actions() if a.isChecked()]
       == [STATUSES["in_progress"]])
 
 win._current_node = None

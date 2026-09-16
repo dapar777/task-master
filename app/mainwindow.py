@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import appicon, icons, mailimport, search, theme, winutil
+from . import appicon, icons, mailimport, mnemonics, search, theme, winutil
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import RECENT_MAX, CommandPalette
@@ -83,6 +83,7 @@ class MainWindow(QMainWindow):
         self._compact_cards = self.settings.value("compact_cards", True, type=bool)
         self._clip = None  # schránka úkolu: {"mode": "copy"|"cut", "data": ..., "src_id": ...}
         self._skip_geometry_save = False  # Nastavení › Ostatní: zapomenout polohu okna
+        self._mnemonics: dict[str, str] = {}  # popisek -> popisek s & (viz _assign_mnemonics)
         self.undo = UndoManager()
         self.act: dict[str, QAction] = {}
 
@@ -636,7 +637,7 @@ class MainWindow(QMainWindow):
         m_task.addAction(self.act["task.flag"])
         m_task.addAction(self.act["task.toggle_done"])
         # podnabídka stavů – naplní se až při rozbalení, podle aktuálního úkolu
-        self._m_status = m_task.addMenu("Stav")
+        self._m_status = m_task.addMenu(self.STATUS_MENU_TITLE)
         self._m_status.aboutToShow.connect(self._fill_status_menu)
         m_task.addAction(self.act["task.block_siblings"])
         m_task.addAction(self.act["task.make_sequence"])
@@ -667,7 +668,7 @@ class MainWindow(QMainWindow):
             if cid is None:
                 m_editor.addSeparator()
             else:
-                m_editor.addAction(self.act[cid])
+                m_editor.addAction(self._menu_proxy(cid, m_editor))
 
         m_settings = mb.addMenu("&Nastavení")
         m_settings.addAction(self.act["app.settings"])
@@ -678,8 +679,88 @@ class MainWindow(QMainWindow):
         m_settings.addSeparator()
         m_settings.addAction(self.act["app.stats"])
         m_settings.addAction(self.act["app.command_palette"])
+        # podtržítkové zkratky položek (menu Filtry si je přiděluje při každé přestavbě)
+        self._assign_mnemonics((m_file, m_task, m_view, m_editor, m_settings))
         for m in mb.findChildren(QMenu):
             self._polish_menu(m)
+
+    #: položky kontextového menu ve stromu/seznamu (None = oddělovač)
+    TREE_MENU_CIDS = (
+        "task.new", "task.new_sub", None,
+        "task.copy", "task.cut", "task.paste", "task.paste_text", None,
+        "task.rename", "task.delete", None,
+        "task.flag", "task.toggle_done", "task.block_siblings", "task.make_sequence", None,
+        "edit.undo",
+    )
+    #: položky kontextového menu karty (Bez rušení)
+    CARD_MENU_CIDS = (
+        "task.new", "task.new_sub", None,
+        "task.copy", "task.cut", "task.paste", None,
+        "task.rename", "task.delete", None,
+        "task.flag", "task.toggle_done", "task.block_siblings", "task.make_sequence", None,
+        "edit.undo",
+    )
+    STATUS_MENU_TITLE = "Stav"
+    CARD_OPEN_LABEL = "Otevřít v editoru"
+
+    def _mn(self, label: str) -> str:
+        """Popisek s mnemonikou podle společného přidělení; neznámý beze změny."""
+        return self._mnemonics.get(label, label)
+
+    @staticmethod
+    def _menu_label(act: QAction) -> str:
+        """Čistý popisek položky menu (bez `&` a bez zkratky za tabulátorem)."""
+        return mnemonics.strip(act.text().split("\t", 1)[0])
+
+    @staticmethod
+    def _set_menu_label(act: QAction, label: str) -> None:
+        """Nastaví popisek a zachová zkratku za tabulátorem (zástupné akce)."""
+        parts = act.text().split("\t", 1)
+        act.setText(label + ("\t" + parts[1] if len(parts) > 1 else ""))
+
+    def _menu_proxy(self, cid: str, menu: QMenu) -> QAction:
+        """Zástupce akce editoru pro menu.
+
+        Akce z lišty editoru mají text jako glyf (B, I, ¶…) a zkratku aktivní
+        jen při fokusu v editoru; menu ale má ukazovat popisek příkazu
+        s mnemonikou. Zkratka je jen text ve sloupci za tabulátorem (QMenu ji
+        tak vykreslí), aby se neregistrovala podruhé; po změně zkratky se
+        obnoví přes `changed`. Zaškrtnutí a povolení se zrcadlí z originálu.
+        """
+        src = self.act[cid]
+        proxy = QAction(self.shortcuts.label(cid), menu)
+        proxy.setCheckable(src.isCheckable())
+        proxy.setChecked(src.isChecked())
+        proxy.setEnabled(src.isEnabled())
+
+        def sync(p=proxy, s=src):
+            seq = s.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            p.setText(p.text().split("\t", 1)[0] + ("\t" + seq if seq else ""))
+            p.setEnabled(s.isEnabled())
+
+        sync()
+        src.changed.connect(sync)
+        src.toggled.connect(proxy.setChecked)
+        proxy.triggered.connect(lambda _checked=False, s=src: s.trigger())
+        return proxy
+
+    def _assign_mnemonics(self, menus) -> None:
+        """Podtržítkové zkratky položek: jedno písmeno na popisek, jedinečné
+        v každém menu, kde se položka objeví. Hlavní a kontextová menu sdílejí
+        tytéž QAction, proto se přiděluje najednou přes všechny skupiny (menu
+        z lišty + kontextové menu stromu, karty a podnabídka Stav)."""
+        def labels(cids):
+            return [mnemonics.strip(self.act[c].text()) for c in cids if c is not None]
+
+        groups = [[self._menu_label(a) for a in m.actions() if not a.isSeparator()] for m in menus]
+        groups.append(labels(self.TREE_MENU_CIDS) + [self.STATUS_MENU_TITLE])
+        groups.append(labels(self.CARD_MENU_CIDS) + [self.STATUS_MENU_TITLE, self.CARD_OPEN_LABEL])
+        groups.append(list(STATUSES.values()))
+        self._mnemonics = mnemonics.assign(groups)
+        for m in menus:
+            for a in m.actions():
+                if not a.isSeparator():
+                    self._set_menu_label(a, self._mn(self._menu_label(a)))
 
     # ------------------------------------------------------------------
     # Téma
@@ -1136,7 +1217,7 @@ class MainWindow(QMainWindow):
                 continue
             known = cid in COMMAND_DEFS
             entries.append(e(self.shortcuts.category(cid) if known else "Editor",
-                             self.shortcuts.label(cid) if known else act.text(),
+                             self.shortcuts.label(cid) if known else mnemonics.strip(act.text()),
                              act.trigger, act.shortcut().toString(), icon=self.MENU_ICONS.get(cid),
                              checked=act.isCheckable() and act.isChecked()))
         return entries
@@ -1733,10 +1814,7 @@ class MainWindow(QMainWindow):
         if node is not None:  # stejná podnabídka jako na kartách
             menu.addMenu(self._build_status_menu(node, menu))
             menu.addSeparator()
-        for cid in ("task.new", "task.new_sub", None,
-                    "task.copy", "task.cut", "task.paste", "task.paste_text", None,
-                    "task.rename", "task.delete", None, "task.flag", "task.toggle_done",
-                    "task.block_siblings", "task.make_sequence", None, "edit.undo"):
+        for cid in self.TREE_MENU_CIDS:
             if cid is None:
                 menu.addSeparator()
             else:
@@ -1747,16 +1825,12 @@ class MainWindow(QMainWindow):
         """Sestaví kontextové menu pro kartu (bez zobrazení – kvůli testům)."""
         menu = self._polish_menu(QMenu(self))
         # editace = otevřít úkol v editoru (přepne do stromu a dá fokus editoru)
-        open_act = menu.addAction(icons.icon("edit", 16), "Otevřít v editoru")
+        open_act = menu.addAction(icons.icon("edit", 16), self._mn(self.CARD_OPEN_LABEL))
         open_act.triggered.connect(lambda: self._on_card_opened(node))
         menu.addSeparator()
         # stav rovnou z karty – v Bez rušení není vidět combobox v detailu
         menu.addMenu(self._build_status_menu(node, menu))
-        for cid in ("task.new", "task.new_sub", None,
-                    "task.copy", "task.cut", "task.paste", None,
-                    "task.rename", "task.delete", None,
-                    "task.flag", "task.toggle_done", "task.block_siblings",
-                    "task.make_sequence", None, "edit.undo"):
+        for cid in self.CARD_MENU_CIDS:
             if cid is None:
                 menu.addSeparator()
             else:
@@ -1782,7 +1856,7 @@ class MainWindow(QMainWindow):
         current = node.meta.get("_status", "")
         for key in STATUS_ORDER:
             # barevná tečka stavu (stejná jako v chipech), aktuální zaškrtnutý
-            act = menu.addAction(icons.icon("dot", 12, theme.status_style(key)[2]), STATUSES[key])
+            act = menu.addAction(icons.icon("dot", 12, theme.status_style(key)[2]), self._mn(STATUSES[key]))
             act.setCheckable(True)
             act.setChecked(key == current)
             act.triggered.connect(
@@ -1796,7 +1870,7 @@ class MainWindow(QMainWindow):
         hromadné operace). Blokováno se doptá na blokující úkol, Hotovo se
         u úkolu s nedokončenými podúkoly zeptá – obojí řeší _apply_status_to.
         """
-        sub = self._polish_menu(QMenu("Stav", parent_menu))
+        sub = self._polish_menu(QMenu(self._mn(self.STATUS_MENU_TITLE), parent_menu))
         sub.setIcon(icons.icon("dot", 12, theme.status_style(node)[2]))
         self._add_status_actions(sub, node)
         return sub
@@ -2438,7 +2512,7 @@ class MainWindow(QMainWindow):
         self.m_filters.clear()
 
         for sf in self.filter_store.filters:
-            act = QAction(sf.name, self)
+            act = QAction(mnemonics.escape(sf.name), self)
             if sf.shortcut:
                 act.setShortcut(QKeySequence(sf.shortcut))
                 act.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
@@ -2451,6 +2525,13 @@ class MainWindow(QMainWindow):
             self.m_filters.addSeparator()
         self.m_filters.addAction(self.act["filter.save"])
         self.m_filters.addAction(self.act["filter.manage"])
+        # mnemoniky jen v rámci tohoto menu (staví se znovu při každé změně filtrů);
+        # sdílené akce jsou jen tady, názvy filtrů už mají doslovný & jako &&
+        items = [a for a in self.m_filters.actions() if not a.isSeparator()]
+        labels = [a.text() if a in self._filter_actions else mnemonics.strip(a.text()) for a in items]
+        mn = mnemonics.assign([labels])
+        for a, lbl in zip(items, labels):
+            a.setText(mn.get(lbl, lbl))
         # combo uložených filtrů v panelu
         self.filter_panel.populate_saved([(f.id, f.name) for f in self.filter_store.filters])
 

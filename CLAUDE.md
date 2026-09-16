@@ -89,6 +89,17 @@ QSettings `palette_recent` jako cesty popisků oddělené `|` – **přejmenová
 popisku** starý záznam tiše zahodí, popisky na kořeni musí být jedinečné.
 Hledání na kořeni prochází i listy podúrovní (`_deep_entries`, hloubka 3).
 
+**Mnemoniky v menu** (`app/mnemonics.py`) – popisky v `COMMAND_DEFS` jsou **bez `&`**;
+podtržítka přiděluje `MainWindow._assign_mnemonics` na konci `_build_menus` najednou přes
+skupiny (menu lišty + `TREE_MENU_CIDS`/`CARD_MENU_CIDS` + podnabídka Stav), protože hlavní
+a kontextová menu sdílejí tytéž `QAction` – jedno písmeno na položku, jedinečné v každé
+skupině. Nové kontextové menu = nová skupina; dynamické menu (Filtry) si přiděluje při
+každé přestavbě a doslovný `&` v názvech escapuje (`&&`). Menu Editor nemůže sdílet
+akce lišty editoru (text = glyf „B“, „¶“…), proto má zástupce `_menu_proxy` – popisek
+z `COMMAND_DEFS` a zkratku jen jako text za `	` (QMenu ji vykreslí ve sloupci, podruhé
+se neregistruje). Kdo čte `act.text()` zpět (paleta, testy), použije `mnemonics.strip()`
+resp. `_menu_label()`. `tests/test_mnemonics.py`.
+
 **Start bez konzole** – `main.py` instaluje `sys.excepthook` (`crash.log` v adresáři
 konfigurace + `QMessageBox.critical`), jinak by pád pod `pythonw` zmizel beze stopy
 („run.bat proběhne a nic se nestane“). `_open_initial_workspace` chytá `OSError`

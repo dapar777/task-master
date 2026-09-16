@@ -227,6 +227,12 @@ písmeno), ve stromu se pohybuješ šipkami, `Enter` skočí z úkolu do editoru
 > Zkratky editoru a stromu jsou **kontextové** – fungují jen když má daný panel
 > fokus, aby nekolidovaly s psaním textu.
 
+**Podtržítkové zkratky menu:** `Alt+písmeno` otevře menu v liště a další písmeno spustí
+položku; v **kontextovém menu** (pravé tlačítko, klávesa Menu / `Shift+F10`) stačí stisknout
+podtržené písmeno – i v podnabídce *Stav*. Písmena přiděluje aplikace sama tak, aby byla
+v každém menu jedinečná (sdílené položky mají všude stejné), popisky v paletě a v editoru
+zkratek zůstávají bez nich.
+
 ## Nastavení
 
 Menu **Nastavení → Nastavení…** (`Ctrl+,`) otevře **jedno okno** se sekcemi vlevo:
@@ -423,6 +429,7 @@ výběr a pohled**:
 | `test_theme.py` | téma: hex barvy jen v `theme.py`; karty se skupinami a strom s chipy se vykreslí ve světlém i tmavém; přepínač tématu |
 | `test_zoom.py` | zoom UI: `px()`/`pt()`/`scaled()`, písmo aplikace a QSS, zkratky, `Ctrl+kolečko`, uložení do nastavení, karty a strom po zoomu; tlačítko tématu v hlavičce |
 | `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
+| `test_mnemonics.py` | podtržítkové zkratky (`&`): přidělení (začátky slov, diakritika naposled, `&&` doslovně), jedinečnost v každém menu lišty, v kontextovém menu stromu i karty a v podnabídce Stav, sdílené akce se stejným písmenem, menu Filtry po přestavbě, paleta bez `&` |
 | `test_startup.py` | start: nedostupný uložený prostor -> varování, volba jiného, jinak výchozí místní bez přepsání cesty; `main.excepthook` -> `crash.log` + dialog |
 | `test_settings.py` | nastavení: jedno okno se sekcemi, hledání (sekce, zvýraznění, filtr zkratek, `Enter`/`Esc`), aplikace hodnot přes akce (téma, zoom, karty, odklad, e-mail, údržba), přepínání z palety (odklad, interval e-mailu), otevření sekcí z menu, samostatné dialogy |
 | `test_mail_import.py` | e-mail → úkoly: parsování zpráv (RFC 2047, HTML → markdown, přílohy), sekce `_INBOX` (vznik, opětovné použití, `_Inbox`), přílohy s relativní cestou, duplicity podle `_mail_id`, nastavení, průchod `MainWindow` s falešnou schránkou (vlákna, označení jako přečtené, aktivní úkol, chyba, timer, undo) |

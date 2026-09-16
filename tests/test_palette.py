@@ -73,6 +73,7 @@ ws.create_root("Beta projekt")
 ws.load()
 
 from app.mainwindow import MainWindow  # noqa: E402
+from app import mnemonics  # noqa: E402
 
 win = MainWindow()
 win.resize(1200, 760)
@@ -137,7 +138,7 @@ missing = []
 for cid, act in win.act.items():
     if cid == "app.command_palette" or cid.startswith("task.status_"):
         continue
-    lbl = win.shortcuts.label(cid) if cid in win.shortcuts.all_command_ids() else act.text()
+    lbl = win.shortcuts.label(cid) if cid in win.shortcuts.all_command_ids() else mnemonics.strip(act.text())
     if lbl not in top:
         missing.append(cid)
 check("žádná akce z menu nechybí " + (", ".join(missing) if missing else ""), not missing)

@@ -64,6 +64,7 @@ mailimport._cred_read = lambda: None
 from app.mainwindow import MainWindow  # noqa: E402
 from app.settingsdialog import SECTIONS, SettingsDialog  # noqa: E402
 from app.search import fold  # noqa: E402
+from app import mnemonics  # noqa: E402
 from app.shortcuts import COMMAND_DEFS  # noqa: E402
 
 fails = []
@@ -215,12 +216,12 @@ check("Nastavení e-mailu… otevře sekci E-mail a po Zrušit vrátí False",
       win._open_mail_settings() is False and opened["section"] == "mail")
 check("zkratka Ctrl+, patří Nastavení…", win.act["app.settings"].shortcut().toString() == "Ctrl+,")
 m_settings = next(m for m in win.menuBar().findChildren(QMenu) if m.title() == "&Nastavení")
-labels = [a.text() for a in m_settings.actions() if not a.isSeparator()]
+labels = [mnemonics.strip(a.text()) for a in m_settings.actions() if not a.isSeparator()]
 check("menu Nastavení začíná dialogem a má e-mail i zkratky",
       labels[0] == "Nastavení…" and "Nastavení e-mailu…" in labels and "Klávesové zkratky…" in labels)
 m_file = next(m for m in win.menuBar().findChildren(QMenu) if m.title() == "&Soubor")
 check("menu Soubor už nastavení e-mailu nemá",
-      "Nastavení e-mailu…" not in [a.text() for a in m_file.actions()])
+      "Nastavení e-mailu…" not in [mnemonics.strip(a.text()) for a in m_file.actions()])
 QDialog.exec = _orig_exec
 
 print("7) Uložit z dialogu přes _open_settings")
