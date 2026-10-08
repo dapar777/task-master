@@ -42,6 +42,17 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 type Host = {
   onReady?: () => void
   onChange?: (md: string) => void
+  /** výška obsahu editoru v CSS px — hostitel bez vlastního rolování (Android
+   *  WebView ve sloupci) podle ní nastaví výšku pohledu; Qt ji nepotřebuje */
+  onHeight?: (px: number) => void
+  /** kurzor je v editoru (Android: klávesnice → „nad klávesnicí jen editor“) */
+  onFocus?: (focused: boolean) => void
+  /** svislá poloha kurzoru/výběru v CSS px od horního okraje stránky — hostitel
+   *  ho udrží nad klávesnicí (stránka sama neroluje) */
+  onCaret?: (top: number, bottom: number) => void
+  /** otevřený popup (lomítkové menu, lišta nad výběrem) — hostitel doroluje,
+   *  aby byl celý vidět */
+  onPopup?: (top: number, bottom: number) => void
 }
 
 declare global {
@@ -57,6 +68,10 @@ let suppress = 0 // > 0 = změny obsahu nehlásit (setMarkdown)
 
 function emit(name: 'onReady'): void
 function emit(name: 'onChange', md: string): void
+function emit(name: 'onHeight', px: number): void
+function emit(name: 'onFocus', focused: boolean): void
+function emit(name: 'onCaret', top: number, bottom: number): void
+function emit(name: 'onPopup', top: number, bottom: number): void
 function emit(name: keyof Host, ...args: unknown[]): void {
   const h = window.TMHost
   const fn = h && (h[name] as ((...a: unknown[]) => void) | undefined)
@@ -93,6 +108,22 @@ const COMMANDS: Record<string, (arg?: unknown) => void> = {
 
 function focusEditor(): void {
   document.querySelector<HTMLElement>('#editor .ProseMirror')?.focus()
+}
+
+/**
+ * Výška obsahu = výška `.milkdown` (text + vnitřní okraje), ne `scrollHeight`
+ * dokumentu: ten je omezený zdola výškou okna, takže by pohled jen rostl
+ * a nikdy se nezmenšil.
+ */
+let lastHeight = -1
+function reportHeight(): void {
+  const el = document.querySelector<HTMLElement>('#editor .milkdown')
+  if (!el) return
+  const h = Math.ceil(el.getBoundingClientRect().height)
+  if (h !== lastHeight) {
+    lastHeight = h
+    emit('onHeight', h)
+  }
 }
 
 const TM = {
@@ -175,6 +206,75 @@ async function main(): Promise<void> {
   await crepe.create()
   ready = true
   emit('onReady')
+  const editorEl = document.querySelector<HTMLElement>('#editor .milkdown')
+  if (editorEl && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => reportHeight()).observe(editorEl)
+  }
+  reportHeight()
+  watchFocusCaretAndPopups()
+}
+
+/**
+ * Fokus, kurzor a popupy pro hostitele bez vlastního rolování (Android).
+ * Pozice jsou v CSS px od horního okraje stránky; stránka sama neroluje
+ * (výška pohledu = obsah), takže odpovídají poloze uvnitř pohledu.
+ */
+function watchFocusCaretAndPopups(): void {
+  const pm = document.querySelector<HTMLElement>('#editor .ProseMirror')
+  if (!pm) return
+  let focused = false
+  pm.addEventListener('focusin', () => { focused = true; emit('onFocus', true); scheduleCaret() })
+  pm.addEventListener('focusout', () => { focused = false; emit('onFocus', false) })
+
+  let caretPending = false
+  let lastCaret = ''
+  function caretRect(): { top: number; bottom: number } | null {
+    const sel = document.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    const range = sel.getRangeAt(0)
+    let r = range.getBoundingClientRect()
+    if (r.height === 0) {
+      // sbalený kurzor v prázdném bloku: vzít prvek, ve kterém stojí
+      const node = range.startContainer
+      const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+      if (!el) return null
+      r = el.getBoundingClientRect()
+    }
+    return { top: Math.floor(r.top + window.scrollY), bottom: Math.ceil(r.bottom + window.scrollY) }
+  }
+  function scheduleCaret(): void {
+    if (caretPending) return
+    caretPending = true
+    requestAnimationFrame(() => {
+      caretPending = false
+      if (!focused) return
+      const c = caretRect()
+      if (!c) return
+      const key = `${c.top}:${c.bottom}`
+      if (key === lastCaret) return
+      lastCaret = key
+      emit('onCaret', c.top, c.bottom)
+    })
+  }
+  document.addEventListener('selectionchange', scheduleCaret)
+  // při psaní se kurzor posouvá i bez změny výběru (nový řádek) → hlásit i po vstupu
+  pm.addEventListener('input', scheduleCaret)
+
+  // popupy Crepe (lomítkové menu, lišta nad výběrem) se ukazují přes data-show;
+  // poloha je od floating-ui až o chvíli později, proto krátké zpoždění
+  const root = document.getElementById('editor')
+  if (!root || typeof MutationObserver === 'undefined') return
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      const el = m.target as HTMLElement
+      if (el.getAttribute('data-show') !== 'true') continue
+      setTimeout(() => {
+        if (el.getAttribute('data-show') !== 'true') return
+        const r = el.getBoundingClientRect()
+        if (r.height > 0) emit('onPopup', Math.floor(r.top + window.scrollY), Math.ceil(r.bottom + window.scrollY))
+      }, 50)
+    }
+  }).observe(root, { subtree: true, attributes: true, attributeFilter: ['data-show'] })
 }
 
 main().catch((e) => {

@@ -126,7 +126,9 @@ ze zdrojů `webeditor/`, build `npm run build`) a původní `app/editor.py` (`Ma
 mají **shodné rozhraní** (`contentChanged`, `command_actions` s cid `fmt.*`/`view.toggle_source`,
 `source_action`, `edit`, `set_markdown`/`to_markdown`/`clear`/`retheme`); vybírá `create_editor()` podle
 QSettings `editor_engine` s fallbackem na Qt, když WebEngine chybí. Most: Python → stránka
-`runJavaScript("window.TM...")`, stránka → Python QWebChannel objekt `TMHost` (`onReady`, `onChange(md)`);
+`runJavaScript("window.TM...")`, stránka → Python QWebChannel objekt `TMHost` (`onReady`, `onChange(md)`,
+`onHeight(px)`, `onFocus(b)`, `onCaret(top, bottom)`, `onPopup(top, bottom)` – geometrie pro hostitele bez vlastního
+rolování; Qt je ignoruje, Android podle nich řídí výšku WebView a rolování nad klávesnicí);
 `to_markdown()` je synchronní díky zrcadlu `_md` plněnému z `onChange`. Barvy do stránky jdou výhradně
 z `theme.py` přes `theme_vars()` (CSS proměnné `--crepe-*`, zoom přes `--tm-font-size`). WebEngine se musí
 importovat **před** `QApplication` (main.py, testy) a `AA_ShareOpenGLContexts` nastavit. Stejný bundle
