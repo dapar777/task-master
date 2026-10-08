@@ -223,8 +223,18 @@ function watchFocusCaretAndPopups(): void {
   const pm = document.querySelector<HTMLElement>('#editor .ProseMirror')
   if (!pm) return
   let focused = false
-  pm.addEventListener('focusin', () => { focused = true; emit('onFocus', true); scheduleCaret() })
-  pm.addEventListener('focusout', () => { focused = false; emit('onFocus', false) })
+  // fokus sledovat na dokumentu: stav se odvodí z document.activeElement, takže
+  // sedí i když fokus přeskočí mezi vnitřními prvky editoru (lišta, odkaz)
+  function syncFocus(): void {
+    const now = !!document.activeElement && pm.contains(document.activeElement)
+    if (now === focused) return
+    focused = now
+    emit('onFocus', now)
+    if (now) scheduleCaret()
+  }
+  document.addEventListener('focusin', syncFocus)
+  document.addEventListener('focusout', () => setTimeout(syncFocus, 0))
+  window.addEventListener('blur', () => setTimeout(syncFocus, 0))
 
   let caretPending = false
   let lastCaret = ''
