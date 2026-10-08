@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons, search, theme
+from . import webeditor
 from .constants import SNOOZE_MAX_DAYS
 from .maildialog import MailSettingsForm
 from .shortcutdialog import ShortcutEditor
@@ -240,6 +241,19 @@ class SettingsDialog(QDialog):
         self.theme_seg.set_current("dark" if theme.is_dark() else "light")
         form.addRow("Téma:", self.theme_seg)
 
+        # editor popisu: Milkdown ve WebEngine (sdílený s Androidem) / původní QTextEdit
+        self.editor_seg = SegmentedControl()
+        for key, label in webeditor.ENGINES:
+            self.editor_seg.add(key, label, "edit" if key == webeditor.ENGINE_MILKDOWN else "doc")
+        self.editor_seg.set_current(webeditor.configured_engine(win.settings))
+        form.addRow("Editor popisu:", self.editor_seg)
+        editor_hint = QLabel("Změna editoru se projeví po restartu aplikace."
+                             + ("" if webeditor.webengine_available()
+                                else " QtWebEngine není nainstalovaný (PySide6-Addons) – použije se Qt editor."))
+        editor_hint.setObjectName("hint")
+        editor_hint.setWordWrap(True)
+        form.addRow("", editor_hint)
+
         # zoom
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self.zoom_slider.setRange(ZOOM_MIN_PCT, ZOOM_MAX_PCT)
@@ -277,6 +291,7 @@ class SettingsDialog(QDialog):
                        "zoom zvětšuje písma, ikony i rozměry najednou.", body)
         self._index_form("appearance", form, {
             "Téma:": "světlé tmavé barvy noční režim",
+            "Editor popisu:": "milkdown wysiwyg markdown web qtextedit editor těla webengine",
             "Zoom celého UI:": "velikost písma měřítko zvětšit zmenšit lupa",
             "Karty:": "bez rušení úsporné kompaktní karty",
         })
@@ -552,6 +567,7 @@ class SettingsDialog(QDialog):
         """Hodnoty z formuláře; aplikuje `MainWindow._apply_settings`."""
         return {
             "theme": self.theme_seg.current() or "light",
+            "editor_engine": self.editor_seg.current() or webeditor.DEFAULT_ENGINE,
             "zoom": self.zoom_slider.value() / 100.0,
             "compact_cards": self.compact_check.isChecked(),
             "snooze": self.snooze_parts(),

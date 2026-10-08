@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from . import icons, theme
 from .constants import PRIORITIES, STATUSES
-from .editor import MarkdownEditor
+from .webeditor import create_editor
 from .storage import TaskNode
 from .tasktree import breadcrumb
 from .widgets import HLine, IconButton, SectionLabel, TitleLabel
@@ -169,7 +169,7 @@ class TaskDetailPanel(QWidget):
         hv.addLayout(chips)
 
         # --- editor ---
-        self.editor = MarkdownEditor()
+        self.editor = create_editor()  # Milkdown (WebEngine) nebo Qt podle nastavení
 
         # --- odkazy na soubory ---
         self.link_list = LinkList()

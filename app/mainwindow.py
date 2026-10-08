@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import appicon, icons, mailimport, mnemonics, search, theme, winutil
+from . import appicon, icons, mailimport, mnemonics, search, theme, webeditor, winutil
 from .activitylog import ActivityLogger
 from .cardview import CardView
 from .commandpalette import RECENT_MAX, CommandPalette
@@ -910,12 +910,24 @@ class MainWindow(QMainWindow):
         if ws and (self.workspace is None or Path(ws) != Path(self.workspace.root)):
             self.detail.commit()
             self._set_workspace(Path(ws))
+        engine = vals.get("editor_engine")
+        if engine and engine != webeditor.configured_engine(self.settings):
+            self._set_editor_engine(engine)
         if vals.get("clear_palette_recent"):
             self.settings.remove("palette_recent")
         if vals.get("reset_geometry"):
             self.settings.remove("geometry")
             self._skip_geometry_save = True
         self.status.showMessage("Nastavení uloženo", 2000)
+
+    def _set_editor_engine(self, engine: str) -> None:
+        """Volba editoru popisu (QSettings `editor_engine`); editor se staví při startu,
+        proto se změna projeví až po restartu – přepínat ho za běhu by znamenalo znovu
+        registrovat zkratky a menu Editor."""
+        if engine not in dict(webeditor.ENGINES):
+            return
+        self.settings.setValue("editor_engine", engine)
+        self.status.showMessage("Editor popisu se přepne po restartu aplikace", 5000)
 
     def _set_snooze_default(self, d: int, h: int, m: int) -> None:
         """Výchozí interval odkladu (předvyplní dialog); nula se nepamatuje."""
@@ -1148,6 +1160,12 @@ class MainWindow(QMainWindow):
                       icon="mail", checked=(m == cur), keep_open=True)
                     for lbl, m in self.MAIL_INTERVALS]
 
+        def editor_engine_children() -> list[dict]:
+            cur = webeditor.configured_engine(self.settings)
+            return [e("Nastavení", lbl, lambda k=key: self._set_editor_engine(k),
+                      icon="edit", checked=(key == cur), keep_open=True)
+                    for key, lbl in webeditor.ENGINES]
+
         parent = node.parent if node is not None else None
         entries = [
             # úkol
@@ -1206,6 +1224,7 @@ class MainWindow(QMainWindow):
             a("app.settings"),
             e("Nastavení", "Nastavení: výchozí odklad", children=snooze_default_children, icon="clock"),
             e("Nastavení", "Nastavení: kontrola e-mailu", children=mail_interval_children, icon="mail"),
+            e("Nastavení", "Nastavení: editor popisu", children=editor_engine_children, icon="edit"),
             a("mail.settings"), a("app.shortcuts"),
             e("Aplikace", "Konec", self.close),
         ]

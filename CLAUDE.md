@@ -121,6 +121,18 @@ v `_apply_settings` + položka v paletě** (kategorie *Nastavení*, `keep_open=T
 vlastnost `searchHit` (QSS v `theme.py`), Enter/Esc v poli obsluhuje `eventFilter`
 (Enter by jinak stiskl výchozí Uložit). Testy: `tests/test_settings.py`.
 
+**Editor popisu** – `app/webeditor.py` (`MilkdownEditor`, QtWebEngine + bundle `app/webeditor/index.html`
+ze zdrojů `webeditor/`, build `npm run build`) a původní `app/editor.py` (`MarkdownEditor`, QTextEdit)
+mají **shodné rozhraní** (`contentChanged`, `command_actions` s cid `fmt.*`/`view.toggle_source`,
+`source_action`, `edit`, `set_markdown`/`to_markdown`/`clear`/`retheme`); vybírá `create_editor()` podle
+QSettings `editor_engine` s fallbackem na Qt, když WebEngine chybí. Most: Python → stránka
+`runJavaScript("window.TM...")`, stránka → Python QWebChannel objekt `TMHost` (`onReady`, `onChange(md)`);
+`to_markdown()` je synchronní díky zrcadlu `_md` plněnému z `onChange`. Barvy do stránky jdou výhradně
+z `theme.py` přes `theme_vars()` (CSS proměnné `--crepe-*`, zoom přes `--tm-font-size`). WebEngine se musí
+importovat **před** `QApplication` (main.py, testy) a `AA_ShareOpenGLContexts` nastavit. Stejný bundle
+a rozhraní `window.TM`/`TMHost` používá Android (WebView) – změna rozhraní = obě strany.
+`tests/test_webeditor.py` (bez WebEngine se přeskočí).
+
 **`app/undo.py`** – hybridní undo: levné záznamy (`fields`, `created`, `moved`,
 `deleted`) místo kopie workspace; `snapshot` je jen fallback. Před operací,
 která mění metadata více uzlů, ulož je přes `undo.push_fields(...)`.

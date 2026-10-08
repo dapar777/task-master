@@ -36,6 +36,7 @@ TESTS = [
     ("test_palette.py", "příkazová paleta: úrovně, hluboké hledání, naposledy použité, úkoly, úplnost"),
     ("test_mail_import.py", "e-mail -> úkoly: parsování, sekce _INBOX, přílohy, duplicity, průchod oknem"),
     ("test_drag_focus.py", "tažení ven z aplikace: cíl smí převzít popředí (AllowSetForegroundWindow)"),
+    ("test_webeditor.py", "editor popisu Milkdown (QtWebEngine): bundle, most QWebChannel, obsah tam a zpět, změny, zdroj, téma, volba enginu a fallback"),
 ]
 
 

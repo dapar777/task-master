@@ -15,10 +15,17 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths
+from PySide6.QtCore import QSettings, QStandardPaths, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from app import theme
+# QtWebEngine (editor Milkdown, app/webeditor.py) se musí importovat před vznikem
+# QApplication; bez balíku PySide6-Addons se tiše použije QTextEdit editor
+try:
+    import PySide6.QtWebEngineWidgets  # noqa: F401
+except ImportError:
+    pass
+
+from app import theme, webeditor
 from app.appicon import app_icon, claim_process_identity
 from app.constants import APP_NAME, ORG_NAME
 from app.mainwindow import MainWindow
@@ -52,6 +59,8 @@ def main() -> int:
     sys.excepthook = excepthook
     # vlastní identita procesu v hlavním panelu (jinak ikona Pythonu)
     claim_process_identity()
+    # sdílené GL kontexty vyžaduje QtWebEngine ještě před vznikem aplikace
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
@@ -66,7 +75,14 @@ def main() -> int:
 
     window = MainWindow()
     window.show()
-    return app.exec()
+    rc = app.exec()
+    # QtWebEngine: okno (a v něm stránku editoru) uklidit, dokud aplikace žije —
+    # při rozpadu lokálních objektů v náhodném pořadí po návratu z main() Chromium
+    # padá; editor se odpojil na aboutToQuit, tady jen doběhnou odložená mazání
+    window.close()
+    window.deleteLater()
+    webeditor.drain_deferred(app)
+    return rc
 
 
 if __name__ == "__main__":

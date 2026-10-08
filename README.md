@@ -160,6 +160,26 @@ Jiný pracovní prostor zvolíš přes menu **Soubor → Otevřít prostor…** 
 > odpojený Google Drive) okno neshodí – nabídne jiný prostor, jinak otevře výchozí místní a
 > uloženou cestu nechá pro příští start. Podrobný výpis dá `python main.py` z konzole.
 
+## Editor popisu (Milkdown)
+
+Popis úkolu jde psát ve dvou editorech, volba je v *Nastavení › Vzhled › Editor popisu*
+(i v paletě *Nastavení: editor popisu*; projeví se po restartu):
+
+- **Milkdown** (výchozí) – WYSIWYG editor markdownu ([Milkdown Crepe](https://milkdown.dev)) běžící
+  v QtWebEngine. Lišta, menu *Editor* i zkratky `fmt.*` jsou stejné jako dřív; navíc umí tabulky,
+  lomítkové menu (`/`) a plovoucí lištu nad výběrem. Markdown se neztrácí při round-tripu
+  (QTextEdit nezná tabulky ani vnořené seznamy). Stejný bundle používá Android klient.
+- **Qt** – původní editor nad `QTextEdit`; použije se automaticky, když QtWebEngine chybí.
+
+QtWebEngine je v balíku `PySide6-Addons` (`pip install -r requirements.txt`). Na Windows s Pythonem
+ze Storu instalace padá na limit 260 znaků v cestě – povol dlouhé cesty (`LongPathsEnabled=1`
+v `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`, jako správce) a instalaci zopakuj.
+
+Webová část je ve `webeditor/` (Vite + TypeScript): `npm install && npm run build` vyrobí jeden
+soubor `app/webeditor/index.html` (je v repu, aby aplikace běžela bez Node). Rozhraní stránky
+`window.TM` (`setMarkdown`, `getMarkdown`, `exec('fmt.*')`, `setTheme`) a události `TMHost.onChange`
+jsou společné pro Qt (QWebChannel) i Android (WebView).
+
 ## Ovládání
 
 Příkazy jsou v **horním menu**, v **kontextovém menu** (pravé tlačítko ve stromu),
@@ -431,5 +451,6 @@ výběr a pohled**:
 | `test_palette.py` | příkazová paleta: **žádná akce z menu nechybí**, podúrovně a návrat, hluboké hledání, naposledy použité, řazení/zobrazení/zoom/téma/filtr/priorita/odklad z palety, hledání úkolů (kořen, `u `, *Přejít na úkol*) |
 | `test_mnemonics.py` | podtržítkové zkratky (`&`): přidělení (začátky slov, diakritika naposled, `&&` doslovně), jedinečnost v každém menu lišty, v kontextovém menu stromu i karty a v podnabídce Stav, sdílené akce se stejným písmenem, menu Filtry po přestavbě, paleta bez `&` |
 | `test_startup.py` | start: nedostupný uložený prostor -> varování, volba jiného, jinak výchozí místní bez přepsání cesty; `main.excepthook` -> `crash.log` + dialog |
+| `test_webeditor.py` | editor popisu Milkdown (QtWebEngine): načtení bundlu, most QWebChannel, obsah tam a zpět, hlášení změn, zdrojový režim, téma ze `theme.py`, volba enginu a fallback na Qt (bez QtWebEngine se přeskočí) |
 | `test_settings.py` | nastavení: jedno okno se sekcemi, hledání (sekce, zvýraznění, filtr zkratek, `Enter`/`Esc`), aplikace hodnot přes akce (téma, zoom, karty, odklad, e-mail, údržba), přepínání z palety (odklad, interval e-mailu), otevření sekcí z menu, samostatné dialogy |
 | `test_mail_import.py` | e-mail → úkoly: parsování zpráv (RFC 2047, HTML → markdown, přílohy), sekce `_INBOX` (vznik, opětovné použití, `_Inbox`), přílohy s relativní cestou, duplicity podle `_mail_id`, nastavení, průchod `MainWindow` s falešnou schránkou (vlákna, označení jako přečtené, aktivní úkol, chyba, timer, undo) |

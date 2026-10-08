@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Task Master – editor</title>
+  <style>
+    /* Barvy a velikosti dodá hostitel přes TM.setTheme() jako --crepe-* / --tm-*
+       proměnné (téma + zoom aplikace); tohle jsou jen bezpečné výchozí hodnoty. */
+    html { font-size: var(--tm-font-size, 16px); }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--crepe-color-background, #fff); }
+    #editor { min-height: 100%; font-size: var(--tm-font-size, 16px); }
+    /* Crepe sám přidává vnitřní okraje; hostitel je nastaví přes --tm-pad (zoom).
+       Spodní rezerva, aby šlo psát i na konci dokumentu s klávesnicí/lištou. */
+    #editor .milkdown .ProseMirror { padding: var(--tm-pad, 12px) var(--tm-pad, 12px) 40vh; outline: none; }
+  </style>
+</head>
+<body>
+  <div id="editor"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
