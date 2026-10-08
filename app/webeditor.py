@@ -155,6 +155,8 @@ def theme_vars() -> dict[str, str]:
         "--crepe-base-font-size": f"{theme.px(15)}px",
         "--tm-font-size": f"{theme.px(15)}px",
         "--tm-pad": f"{theme.px(12)}px",
+        # spodní rezerva jen malá – na desktopu není klávesnice, co by text zakrývala
+        "--tm-pad-bottom": f"{theme.px(24)}px",
     }
 
 

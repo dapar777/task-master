@@ -10,9 +10,13 @@
     html { font-size: var(--tm-font-size, 16px); }
     html, body { margin: 0; padding: 0; height: 100%; background: var(--crepe-color-background, #fff); }
     #editor { min-height: 100%; font-size: var(--tm-font-size, 16px); }
-    /* Crepe sám přidává vnitřní okraje; hostitel je nastaví přes --tm-pad (zoom).
-       Spodní rezerva, aby šlo psát i na konci dokumentu s klávesnicí/lištou. */
-    #editor .milkdown .ProseMirror { padding: var(--tm-pad, 12px) var(--tm-pad, 12px) 40vh; outline: none; }
+    /* Crepe sám dává editoru padding 60px 120px (reset.css); hostitel ho nastaví
+       přes --tm-pad (zoom). Spodní rezerva --tm-pad-bottom: na desktopu malá,
+       na mobilu větší, aby šlo psát na konci dokumentu nad klávesnicí. */
+    #editor .milkdown .ProseMirror {
+      padding: var(--tm-pad, 12px) var(--tm-pad, 12px) var(--tm-pad-bottom, 24px);
+      outline: none;
+    }
   </style>
 </head>
 <body>

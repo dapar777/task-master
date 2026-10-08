@@ -31,7 +31,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
-from app import webeditor  # noqa: E402
+from app import theme, webeditor  # noqa: E402
 from app.editor import MarkdownEditor  # noqa: E402
 
 fails = []
@@ -125,9 +125,34 @@ check("návrat propíše zdroj do stránky",
 
 print("6) Téma do stránky")
 ed.retheme()
-bg = js(ed, "getComputedStyle(document.documentElement).getPropertyValue('--crepe-color-background').trim()")
-check("barva pozadí je z theme.py", bg.lower() == webeditor.theme_vars()["--crepe-color-background"].lower())
-check("velikost písma jde přes zoom (px)", js(ed, "getComputedStyle(document.documentElement).getPropertyValue('--tm-font-size').trim()").endswith("px"))
+vars_ = webeditor.theme_vars()
+
+
+def rgb(hex_):
+    h = hex_.lstrip("#")
+    return f"rgb({int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)})"
+
+
+# měřit na `.milkdown`, ne na <html>: téma Crepe definuje proměnné právě tam a přebilo by je
+on_editor = js(ed, "getComputedStyle(document.querySelector('.milkdown')).getPropertyValue('--crepe-color-background').trim()")
+check("--crepe-color-background na .milkdown je z theme.py", on_editor.lower() == vars_["--crepe-color-background"].lower())
+body_bg = js(ed, "getComputedStyle(document.body).backgroundColor")
+check("skutečné pozadí stránky = plátno tématu", body_bg == rgb(vars_["--crepe-color-background"]))
+text_color = js(ed, "getComputedStyle(document.querySelector('.milkdown .ProseMirror')).color")
+check("barva textu editoru = text tématu", text_color == rgb(vars_["--crepe-color-on-background"]))
+check("velikost písma jde přes zoom (px)", js(ed, "getComputedStyle(document.querySelector('.milkdown')).getPropertyValue('--tm-font-size').trim()").endswith("px"))
+# tmavé téma: po přepnutí tokenů se stránka přebarví (bez reloadu)
+theme.apply(app, "dark", zoom=theme.zoom())
+ed.retheme()
+dark = webeditor.theme_vars()
+check("tmavé téma se liší od světlého", dark["--crepe-color-background"] != vars_["--crepe-color-background"])
+check("po přepnutí na tmavé má stránka tmavé plátno",
+      wait_until(lambda: js(ed, "getComputedStyle(document.body).backgroundColor") == rgb(dark["--crepe-color-background"]), 5.0))
+theme.apply(app, "light", zoom=theme.zoom())
+ed.retheme()
+pad_bottom = js(ed, "getComputedStyle(document.querySelector('.milkdown .ProseMirror')).paddingBottom")
+check(f"spodní odsazení editoru je malé, ne desetiny okna ({pad_bottom})",
+      pad_bottom.endswith("px") and float(pad_bottom[:-2]) <= 48)
 
 print("7) Bez & v popiscích, bez chyb v konzoli")
 check("JS konzole bez chyb", not any("error" in m.lower() for m in ed.console_messages))

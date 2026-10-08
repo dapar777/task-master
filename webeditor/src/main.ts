@@ -121,10 +121,23 @@ const TM = {
   },
   setTheme(vars: Record<string, string> | string): void {
     const map = typeof vars === 'string' ? (JSON.parse(vars) as Record<string, string>) : vars
-    const root = document.documentElement
-    for (const [k, v] of Object.entries(map)) {
-      if (k.startsWith('--crepe-') || k.startsWith('--tm-')) root.style.setProperty(k, v)
+    // Téma Crepe definuje všechny --crepe-* proměnné pod `.milkdown {}`, takže
+    // hodnota nastavená na <html> by se k editoru nedostala (přebije ji vlastní
+    // definice potomka). Proto vlastní <style> s pravidlem na `:root, .milkdown`
+    // vložený AŽ ZA CSS bundlu: stejná specificita, pozdější vyhrává.
+    const decls = Object.entries(map)
+      .filter(([k]) => k.startsWith('--crepe-') || k.startsWith('--tm-'))
+      .map(([k, v]) => `${k}: ${v};`)
+      .join(' ')
+    let style = document.getElementById('tm-theme') as HTMLStyleElement | null
+    if (!style) {
+      style = document.createElement('style')
+      style.id = 'tm-theme'
+      document.head.appendChild(style)
+    } else {
+      document.head.appendChild(style) // znovu nakonec, kdyby mezitím přibylo CSS
     }
+    style.textContent = `:root, .milkdown { ${decls} }`
   },
   setReadonly(on: boolean): void {
     crepe?.setReadonly(!!on)
